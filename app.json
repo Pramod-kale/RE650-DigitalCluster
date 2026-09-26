@@ -2,7 +2,7 @@
   "expo": {
     "name": "RE650 Cluster",
     "slug": "DigitalCluster",
-    "version": "1.0.0",
+    "version": "0.1.0-beta.1",
     "orientation": "landscape",
     "icon": "./assets/images/icon.png",
     "scheme": "digitalcluster",
@@ -37,7 +37,7 @@
         {
           "backgroundColor": "#0d1117",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 220
         }
       ],
       "expo-sharing"
