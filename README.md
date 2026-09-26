@@ -1,56 +1,80 @@
-# Welcome to your Expo app 👋
+# RE650 Cluster (Android)
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+The Royal Enfield Interceptor 650 dashboard as a standalone Android app. The phone connects straight to the ELM327 WiFi dongle, polls the ECU, and stores everything on the phone. It replaces the Raspberry Pi (`backend/`) and the web UI (`frontend/`).
 
-## Get started
-
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+[Bike ECU] ←CAN→ [ELM327 WiFi dongle 192.168.0.10:35000] ←raw TCP over WiFi→ [this app]
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Run it
 
-### Other setup steps
+The app uses a native TCP socket (`react-native-tcp-socket`), so **Expo Go won't work**. You need a development build:
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+```bash
+npm install
+npx expo run:android            # local build: Android SDK + phone over USB
+# or build in the cloud:
+npx eas-cli@latest build --profile development --platform android
+```
 
-## Learn more
+Then start Metro with `npx expo start` and open the dev build on the phone.
 
-To learn more about developing your project with Expo, look at the following resources:
+## First launch
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+1. Tap the yellow banner and **pick a storage folder**, for example `Documents/RE650`.
+   - Rides, the odometer and tank data are written both inside the app and to this folder.
+   - The folder survives uninstalling the app and *Clear app data*.
+   - After a reinstall, pick the same folder again and the odometer, tank and ride history come back.
+2. Join the dongle's WiFi (`WiFi_OBDII`, `Steren SCAN-030`, …). When Android warns *"no internet"*, choose **stay connected**.
+   - Keep mobile data on. The app sends dongle traffic over WiFi, and other apps keep using mobile data for the internet.
+3. Start the bike. The status turns **CONNECTED** within a few seconds.
 
-## Join the community
+## Without the bike
 
-Join our community of developers creating universal apps.
+- **Mock mode:** Settings → *Mock data* turns on a synthetic 60 s ride. It is recorded as `ride_*_MOCK.csv`, which `fuel_calibration.py` ignores.
+- **Fake dongle:** `python3 scripts/fake_elm327.py` (from the repo root) replays a captured real session over TCP on port 35000.
+  - Put the phone and the laptop on the same WiFi.
+  - In Settings, set Host to the laptop's IP.
+  - `--asleep N` simulates an ECU that is still off (NO DATA), which exercises the auto-reconnect.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Data
+
+| File (in the app and in the picked folder) | What |
+|---|---|
+| `ride_YYYYMMDD_HHMMSS.csv` | One per ride, same columns as the Pi backend. Works with `scripts/analyze_ride.py` / `fuel_calibration.py`. |
+| `state.{a,b}.json` | Lifetime odometer and tank-since-fill. There are two alternating slots, so a crash mid-write can't corrupt it. |
+| `settings.{a,b}.json` | Dongle host/port, VE, fuel correction factor, poll interval, mock mode |
+| `rides_index.{a,b}.json` | Cached ride summaries for the Rides screen |
+| `fuel_log.{a,b}.json` | Refuel history: litres, cost, partial/missed flags, and the km plus app estimate for each fill |
+
+How often data is saved:
+- Ride rows are appended internally every 5 s and to the folder every 30 s, and are flushed right away when the app goes to the background.
+- The odometer and tank are saved every 30 s, and immediately when you save a refuel.
+- A ride starts on the first live sample and ends after 2 minutes with no data.
+
+## Fuel log
+
+- Tap **⛽ Refuel** on the dashboard at every fill-up and enter the litres added (the cost is optional).
+- Mileage (km/L) uses the tank-to-tank method, so it's only computed between two **full** fills.
+  - A *partial* fill adds its litres to the next full fill.
+  - *"I missed logging a refuel"* leaves that tank out of the averages.
+- Comparing pump litres with the app's estimate gives a calibrated fuel correction factor. The Fuel log offers to apply it.
+- Tap an entry to edit or delete it. A deleted entry's km move to the next refuel, so no distance is lost.
+
+## Code map
+
+| Path | Role |
+|---|---|
+| `src/obd/` | ELM327 TCP client, response parsing, PID decoders, gear and fuel math, mock generator (a port of `backend/obd.py`) |
+| `src/engine/` | Poll loop with reconnect/backoff (`poller.ts`), live state and `/api/*`-equivalent snapshot (`store.ts`), ride lifecycle, app runtime |
+| `src/storage/` | SAF folder, crash-safe JSON slots, ride CSV writer/list/share/delete |
+| `src/fuel/` | Fuel log storage and the tank-to-tank mileage and calibration maths |
+| `src/app/` | Screens: dashboard (`index`), `fuel` (log), `refuel` (add/edit), `rides`, `settings` |
+
+## Checks
+
+```bash
+npx tsc --noEmit && npx expo lint && npm test
+```
+
+The tests compare the TypeScript port against values computed by the original Python code. They also run the real `Elm327Client` against `scripts/fake_elm327.py` over TCP.
