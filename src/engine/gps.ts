@@ -9,7 +9,7 @@
  *    is active, which would freeze the OBD poll loop; the local RideKeepAlive
  *    module holds one open (plus a CPU wake lock) for the length of the ride.
  *    It starts even when location can't, so the bike data is still logged.
- * Mock rides get a synthetic track driven by the mock speed, so the ride map
+ * Mock rides get a synthetic loop driven by the mock speed, so the ride map
  * can be tried without riding.
  */
 import { requireOptionalNativeModule } from 'expo';
@@ -53,7 +53,7 @@ let starting = false;
 let wanted = false;
 let fix: Fix | null = null;
 let lastKnown: { lat: number; lon: number } | null = null;
-let mock: { lat: number; lon: number; heading: number; t: number; t0: number } | null = null;
+let mock: { lat0: number; lon0: number; th: number; t: number } | null = null;
 let releaseKeepAlive: (() => void) | null = null;
 let fixListener: ((speedKmh: number | null, t: number) => void) | null = null;
 
@@ -256,23 +256,40 @@ async function ensureRunning() {
 }
 
 // ---------------------------------------------------------------------------
-// Mock track: wanders around the last known position at the mock speed.
+// Mock track: a smooth closed loop (about 7 km round) starting at the last
+// known position, ridden at the mock speed, so the route and the ride map look
+// like a real ride rather than a random walk.
 // ---------------------------------------------------------------------------
+const LOOP_KM = { rx: 1.4, ry: 0.9, wobble: 0.18 };
+
+/** Offset from the loop centre in km (x east, y north) at angle th. */
+function loopKm(th: number): [number, number] {
+  return [
+    LOOP_KM.rx * Math.cos(th) + LOOP_KM.wobble * Math.cos(3 * th),
+    LOOP_KM.ry * Math.sin(th) + LOOP_KM.wobble * Math.sin(2 * th),
+  ];
+}
+
 function mockFix(t: number): Fix {
   if (!mock) {
     const a = lastKnown ?? DEMO_ANCHOR;
-    mock = { ...a, heading: 0, t, t0: t };
+    mock = { lat0: a.lat, lon0: a.lon, th: 0, t };
   }
-  const dt = Math.min((t - mock.t) / 1000, 5);
+  const dt = Math.max(0, Math.min((t - mock.t) / 1000, 5));
   const km = (getLive().speed * dt) / 3600;
-  // Slowly varying turn rate gives a meandering loop instead of a straight line.
-  mock.heading += dt * 0.07 * Math.sin((t - mock.t0) / 30_000);
-  mock.lat += (km * Math.cos(mock.heading)) / KM_PER_DEG_LAT;
-  mock.lon +=
-    (km * Math.sin(mock.heading)) / (KM_PER_DEG_LAT * Math.cos((mock.lat * Math.PI) / 180));
+  // Advance along the curve by `km`: angle step = distance / local curve length.
+  const [x1, y1] = loopKm(mock.th);
+  const [x2, y2] = loopKm(mock.th + 1e-3);
+  const kmPerRad = Math.hypot(x2 - x1, y2 - y1) / 1e-3;
+  mock.th += km / kmPerRad;
   mock.t = t;
-  addTrackPoint(mock.lat, mock.lon);
-  return { lat: mock.lat, lon: mock.lon, alt: null, acc: 5, speed: getLive().speed, t };
+  // Start the loop at the anchor: shift by the loop's own starting offset.
+  const [sx, sy] = loopKm(0);
+  const [x, y] = loopKm(mock.th);
+  const lat = mock.lat0 + (y - sy) / KM_PER_DEG_LAT;
+  const lon = mock.lon0 + (x - sx) / (KM_PER_DEG_LAT * Math.cos((mock.lat0 * Math.PI) / 180));
+  addTrackPoint(lat, lon);
+  return { lat, lon, alt: null, acc: 5, speed: getLive().speed, t };
 }
 
 /** The lat, lon, alt, gps_acc CSV fields; empty when there is no fresh fix. */

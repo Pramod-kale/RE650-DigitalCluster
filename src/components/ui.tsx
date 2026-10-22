@@ -99,18 +99,20 @@ export function Hatch({ color = C.line, gap = 7 }: { color?: string; gap?: numbe
 }
 
 /**
- * Hatched track with an outlined fill. `zone` (an accent) colours the outline
- * and adds a faint tint; never a solid fill.
+ * Hatched track with a fill. Outlined by default (`zone` colours the outline
+ * and adds a faint tint); `solid` fills it: light grey, or the zone colour.
  */
 export function HatchBar({
   pct,
   vertical,
   zone,
+  solid,
   style,
 }: {
   pct: number;
   vertical?: boolean;
   zone?: string | null;
+  solid?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
   const p = `${Math.max(0, Math.min(100, pct))}%` as const;
@@ -130,8 +132,8 @@ export function HatchBar({
             {
               borderRadius: radius,
               borderWidth: 1,
-              borderColor: zone ?? C.muted,
-              backgroundColor: zone ? tint(zone, 0.18) : C.bg,
+              borderColor: zone ?? (solid ? C.barFill : C.muted),
+              backgroundColor: solid ? (zone ?? C.barFill) : zone ? tint(zone, 0.18) : C.bg,
             },
           ]}
         />

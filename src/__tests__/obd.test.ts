@@ -3,7 +3,7 @@
  * (backend/obd.py, backend/main.py::_mock_values) on the same inputs.
  */
 import { calcFuelLh, decodePid, estimateGear } from '@/obd/decode';
-import { mockValues } from '@/obd/mock';
+import { MOCK_CYCLE_S, mockValues } from '@/obd/mock';
 import { cleanResponse, parsePidResponse, parseVoltage } from '@/obd/parse';
 
 describe('decodePid (matches obd.py)', () => {
@@ -61,25 +61,46 @@ describe('calcFuelLh (matches obd.py, VE 0.85, factor 0.36)', () => {
   });
 });
 
-describe('mockValues (matches main.py _mock_values)', () => {
-  const cases: [number, number[]][] = [
-    [0, [950.0, 0.0, 0.0, 25.0, 28.0, 60.0, 0.0]],
-    [3, [933.902812459987, 0.0, 0.0, 25.0, 28.0, 61.5, 0.0]],
-    [10, [1847.6834785856572, 30.0, 60.05984187953569, 67.04188931567498, 28.0, 65.0, 57.05684978555891]],
-    [25, [3499.657869206618, 84.40660360109061, 23.688125731480355, 41.58168801203625, 28.0, 72.5, 22.503719444906338]],
-    [45, [2906.3553978530317, 56.66666666666667, 5.0, 28.5, 28.0, 82.5, 4.75]],
-    [57, [979.1786918745687, 0.0, 0.0, 25.0, 28.0, 88.5, 0.0]],
-    [130.5, [2032.451826444223, 33.0, 65.41987227845874, 70.79391059492112, 28.0, 90.0, 62.1488786645358]],
-  ];
-  it.each(cases)('t=%p', (t, [rpm, speed, tps, map, iat, eot, load]) => {
-    const v = mockValues(t);
-    expect(v.rpm).toBeCloseTo(rpm, 8);
-    expect(v.speed).toBeCloseTo(speed, 8);
-    expect(v.tps).toBeCloseTo(tps, 8);
-    expect(v.map).toBeCloseTo(map, 8);
-    expect(v.iat).toBeCloseTo(iat, 8);
-    expect(v.eot).toBeCloseTo(eot, 8);
-    expect(v.load).toBeCloseTo(load, 8);
+describe('mockValues', () => {
+  const at = (from: number, to: number, step = 0.5) => {
+    const out = [];
+    for (let t = from; t <= to; t += step) out.push(mockValues(t));
+    return out;
+  };
+
+  it('idles at the start with the engine running', () => {
+    const v = mockValues(2);
+    expect(v.speed).toBe(0);
+    expect(v.tps).toBe(0);
+    expect(v.rpm).toBeGreaterThan(900);
+    expect(v.rpm).toBeLessThan(1000);
+  });
+
+  it('changes smoothly: no jumps in speed between half-second samples', () => {
+    const vs = at(0, MOCK_CYCLE_S * 2);
+    for (let i = 1; i < vs.length; i++) {
+      expect(Math.abs(vs[i].speed - vs[i - 1].speed)).toBeLessThan(4);
+    }
+  });
+
+  it('visits every dashboard zone in one cycle', () => {
+    const vs = at(0, MOCK_CYCLE_S);
+    const speeds = vs.map((v) => v.speed);
+    expect(Math.max(...speeds)).toBeGreaterThan(100); // red
+    expect(speeds.some((s) => s > 60 && s < 80)).toBe(true); // plain cruise
+    expect(Math.max(...vs.map((v) => v.tps))).toBeGreaterThan(60); // orange throttle
+    expect(Math.max(...vs.map((v) => v.rpm))).toBeLessThan(7000); // never bounces off the limiter
+  });
+
+  it('loops, and keeps values in sensor range', () => {
+    // Same point of the ride one cycle later (the ±2 km/h wobble has its own period).
+    expect(Math.abs(mockValues(30).speed - mockValues(30 + MOCK_CYCLE_S).speed)).toBeLessThanOrEqual(4);
+    for (const v of at(0, MOCK_CYCLE_S * 3, 3)) {
+      expect(v.tps).toBeGreaterThanOrEqual(0);
+      expect(v.tps).toBeLessThanOrEqual(100);
+      expect(v.eot).toBeLessThanOrEqual(92);
+      expect(v.voltage).toBeGreaterThan(13);
+    }
   });
 });
 

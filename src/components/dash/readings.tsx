@@ -51,7 +51,7 @@ export function PctTile({ label, value, vertical }: { label: string; value: numb
           <Text style={[styles.pctSmall, zone ? { color: zone } : null]}>{v}%</Text>
         </View>
       )}
-      <HatchBar pct={value} vertical={vertical} zone={zone} style={vertical ? { flex: 1 } : { height: 14 }} />
+      <HatchBar pct={value} vertical={vertical} zone={zone} solid style={vertical ? { flex: 1 } : { height: 14 }} />
     </View>
   );
 }

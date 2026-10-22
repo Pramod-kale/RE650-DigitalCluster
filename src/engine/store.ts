@@ -120,7 +120,10 @@ export function applyPid(name: PidName, value: number, correction: number, t = n
   recompute(correction, t);
 }
 
-/** Store a whole sample at once (mock mode). */
+/**
+ * Store a whole sample at once (mock mode). Mock km and fuel count towards the
+ * session only: the odometer and tank (persisted and synced) stay real.
+ */
 export function applySample(
   v: Pick<LiveState, PidName | 'voltage'>,
   correction: number,
@@ -130,7 +133,7 @@ export function applySample(
   Object.assign(state, v);
   state.lastUpdate = t;
   state.connected = true;
-  recompute(correction, t);
+  recompute(correction, t, false);
 }
 
 /**
@@ -141,7 +144,7 @@ function resumeIfStale(t: number) {
   if (!isFresh(state.lastUpdate, t)) session.lastT = t;
 }
 
-function recompute(correction: number, t: number) {
+function recompute(correction: number, t: number, real = true) {
   state.fuelLh = calcFuelLh(state.map, state.rpm, state.iat, DEFAULT_VE, correction);
   state.gear = estimateGear(state.rpm, state.speed);
   const dtH = Math.max(0, t - session.lastT) / 3_600_000;
@@ -152,10 +155,12 @@ function recompute(correction: number, t: number) {
   session.eotMax = Math.max(session.eotMax, state.eot);
   session.fuelTotalL += dL;
   session.kmTotal += dKm;
-  tank.sinceFillL += dL;
-  tank.sinceFillKm += dKm;
-  odometer.fuelTotalL += dL;
-  odometer.kmTotal += dKm;
+  if (real) {
+    tank.sinceFillL += dL;
+    tank.sinceFillKm += dKm;
+    odometer.fuelTotalL += dL;
+    odometer.kmTotal += dKm;
+  }
   session.lastT = t;
   notify();
 }
