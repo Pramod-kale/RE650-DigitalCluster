@@ -5,7 +5,7 @@
 import { calcFuelLh, estimateGear } from '@/obd/decode';
 
 import { instantKmPerL, kmPerL } from './units';
-import type { PidName } from '@/obd/constants';
+import { DEFAULT_VE, type PidName } from '@/obd/constants';
 
 export const STALE_AFTER_MS = 2000; // no new data in 2s → disconnected
 
@@ -112,18 +112,17 @@ export function isFresh(lastUpdate: number | null, t = now()): boolean {
 // ---------------------------------------------------------------------------
 
 /** Store one decoded PID, then recompute derived values + accumulators. */
-export function applyPid(name: PidName, value: number, ve: number, correction: number, t = now()) {
+export function applyPid(name: PidName, value: number, correction: number, t = now()) {
   resumeIfStale(t);
   state[name] = value;
   state.lastUpdate = t;
   state.connected = true;
-  recompute(ve, correction, t);
+  recompute(correction, t);
 }
 
 /** Store a whole sample at once (mock mode). */
 export function applySample(
   v: Pick<LiveState, PidName | 'voltage'>,
-  ve: number,
   correction: number,
   t = now(),
 ) {
@@ -131,7 +130,7 @@ export function applySample(
   Object.assign(state, v);
   state.lastUpdate = t;
   state.connected = true;
-  recompute(ve, correction, t);
+  recompute(correction, t);
 }
 
 /**
@@ -142,8 +141,8 @@ function resumeIfStale(t: number) {
   if (!isFresh(state.lastUpdate, t)) session.lastT = t;
 }
 
-function recompute(ve: number, correction: number, t: number) {
-  state.fuelLh = calcFuelLh(state.map, state.rpm, state.iat, ve, correction);
+function recompute(correction: number, t: number) {
+  state.fuelLh = calcFuelLh(state.map, state.rpm, state.iat, DEFAULT_VE, correction);
   state.gear = estimateGear(state.rpm, state.speed);
   const dtH = Math.max(0, t - session.lastT) / 3_600_000;
   const dL = state.fuelLh * dtH;
@@ -201,6 +200,19 @@ export function markTankFull(t = now()) {
   tank.sinceFillL = 0;
   tank.sinceFillKm = 0;
   tank.lastFillT = t;
+  notify(true);
+}
+
+/**
+ * The fuel calibration changed: rescale the estimated litres accumulated so
+ * far, so the running tank (which a refuel entry records along with the
+ * factor) and the totals are all on the current factor.
+ */
+export function rescaleFuel(ratio: number) {
+  if (!Number.isFinite(ratio) || ratio <= 0 || ratio === 1) return;
+  tank.sinceFillL *= ratio;
+  session.fuelTotalL *= ratio;
+  odometer.fuelTotalL *= ratio;
   notify(true);
 }
 

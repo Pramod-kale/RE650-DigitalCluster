@@ -1,0 +1,54 @@
+-- Merging decision tree log ---
+manifest
+ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:1:1-14:12
+INJECTED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:1:1-14:12
+	package
+		INJECTED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml
+	xmlns:tools
+		ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:2:3-49
+	xmlns:android
+		ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:1:11-69
+uses-permission#android.permission.BLUETOOTH
+ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:4:3-93
+	android:maxSdkVersion
+		ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:4:64-90
+	android:name
+		ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:4:20-63
+uses-permission#android.permission.BLUETOOTH_ADMIN
+ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:5:3-99
+	android:maxSdkVersion
+		ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:5:70-96
+	android:name
+		ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:5:20-69
+uses-permission#android.permission.BLUETOOTH_SCAN
+ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:7:3-10:27
+	android:usesPermissionFlags
+		ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:9:5-51
+	tools:targetApi
+		ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:10:5-24
+	android:name
+		ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:8:5-53
+uses-permission#android.permission.BLUETOOTH_CONNECT
+ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:11:3-74
+	android:name
+		ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:11:20-71
+uses-feature#android.hardware.bluetooth
+ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:12:3-86
+	android:required
+		ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:12:59-83
+	android:name
+		ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:12:17-58
+uses-feature#android.hardware.bluetooth_le
+ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:13:3-89
+	android:required
+		ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:13:62-86
+	android:name
+		ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:13:17-61
+uses-sdk
+INJECTED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml
+INJECTED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml
+	android:targetSdkVersion
+		INJECTED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml

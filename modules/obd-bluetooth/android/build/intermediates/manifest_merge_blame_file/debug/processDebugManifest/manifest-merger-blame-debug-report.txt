@@ -1,0 +1,46 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    xmlns:tools="http://schemas.android.com/tools"
+4    package="expo.modules.obdbluetooth" >
+5
+6    <uses-sdk android:minSdkVersion="24" />
+7    <!-- Android 11 and older -->
+8    <uses-permission
+8-->/Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:4:3-93
+9        android:name="android.permission.BLUETOOTH"
+9-->/Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:4:20-63
+10        android:maxSdkVersion="30" />
+10-->/Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:4:64-90
+11    <uses-permission
+11-->/Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:5:3-99
+12        android:name="android.permission.BLUETOOTH_ADMIN"
+12-->/Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:5:20-69
+13        android:maxSdkVersion="30" />
+13-->/Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:5:70-96
+14    <!-- Android 12+: scanning only lists OBD dongles, never derives location -->
+15    <uses-permission
+15-->/Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:7:3-10:27
+16        android:name="android.permission.BLUETOOTH_SCAN"
+16-->/Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:8:5-53
+17        android:usesPermissionFlags="neverForLocation"
+17-->/Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:9:5-51
+18        tools:targetApi="s" />
+18-->/Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:10:5-24
+19    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+19-->/Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:11:3-74
+19-->/Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:11:20-71
+20
+21    <uses-feature
+21-->/Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:12:3-86
+22        android:name="android.hardware.bluetooth"
+22-->/Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:12:17-58
+23        android:required="false" />
+23-->/Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:12:59-83
+24    <uses-feature
+24-->/Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:13:3-89
+25        android:name="android.hardware.bluetooth_le"
+25-->/Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:13:17-61
+26        android:required="false" />
+26-->/Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/obd-bluetooth/android/src/main/AndroidManifest.xml:13:62-86
+27
+28</manifest>

@@ -1,17 +1,27 @@
 /**
- * Pure helpers for ride CSVs (no I/O). Column layout is identical to the Pi
- * backend so scripts/analyze_ride.py and fuel_calibration.py keep working.
+ * Pure helpers for ride CSVs (no I/O). The first 11 columns are identical to
+ * the Pi backend so scripts/analyze_ride.py and fuel_calibration.py keep
+ * working; the phone appends GPS columns after them (empty without a fix).
  */
+
+import { cleanSpeed } from '@/obd/decode';
 
 export const CSV_HEADER = [
   'timestamp', 'rpm', 'speed', 'tps', 'map', 'iat', 'eot',
   'load', 'voltage', 'fuel_lh', 'gear',
+  'lat', 'lon', 'alt', 'gps_acc',
 ] as const;
+
+// Bump when summarizeCsv changes so cached summaries in the rides index are
+// recomputed (2: bogus 255 km/h / 1 km/h readings are ignored).
+export const SUMMARY_VERSION = 2;
 
 export const RIDE_RE = /^ride_(\d{8})_(\d{6})(_MOCK)?\.csv$/;
 
 export type RideSummary = {
+  v?: number; // SUMMARY_VERSION it was computed with
   name: string;
+  device?: string; // set on rides downloaded from another phone
   startedAt: number; // epoch ms (from filename)
   durationMin: number;
   km: number;
@@ -46,7 +56,7 @@ export function csvLine(fields: readonly string[]): string {
 }
 
 // Gaps longer than this are not integrated (bike off / link lost mid-file).
-const MAX_DT_S = 5;
+export const MAX_DT_S = 5;
 
 /** Summarize a ride CSV: integrates speed and fuel over the row timestamps. */
 export function summarizeCsv(name: string, text: string): RideSummary {
@@ -73,7 +83,7 @@ export function summarizeCsv(name: string, text: string): RideSummary {
     if (!ts || ts.length !== 3 || ts.some((n) => !Number.isFinite(n))) continue;
     rows++;
     const s = ts[0] * 3600 + ts[1] * 60 + ts[2];
-    const speed = Number(f[iSpeed]) || 0;
+    const speed = cleanSpeed(Number(f[iSpeed]) || 0) ?? 0;
     const rpm = Number(f[iRpm]) || 0;
     const fuel = Number(f[iFuel]) || 0;
     vMax = Math.max(vMax, speed);
@@ -91,6 +101,7 @@ export function summarizeCsv(name: string, text: string): RideSummary {
   }
 
   return {
+    v: SUMMARY_VERSION,
     name,
     startedAt: meta.startedAt,
     durationMin: Math.round((totalS / 60) * 10) / 10,

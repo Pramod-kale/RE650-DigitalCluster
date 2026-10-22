@@ -1,0 +1,24 @@
+-- Merging decision tree log ---
+manifest
+ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/ride-keep-alive/android/src/main/AndroidManifest.xml:1:1-4:12
+INJECTED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/ride-keep-alive/android/src/main/AndroidManifest.xml:1:1-4:12
+	package
+		INJECTED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/ride-keep-alive/android/src/main/AndroidManifest.xml
+	xmlns:android
+		ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/ride-keep-alive/android/src/main/AndroidManifest.xml:1:11-69
+uses-permission#android.permission.WAKE_LOCK
+ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/ride-keep-alive/android/src/main/AndroidManifest.xml:2:3-66
+	android:name
+		ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/ride-keep-alive/android/src/main/AndroidManifest.xml:2:20-63
+uses-permission#android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/ride-keep-alive/android/src/main/AndroidManifest.xml:3:3-93
+	android:name
+		ADDED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/ride-keep-alive/android/src/main/AndroidManifest.xml:3:20-90
+uses-sdk
+INJECTED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/ride-keep-alive/android/src/main/AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/ride-keep-alive/android/src/main/AndroidManifest.xml
+INJECTED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/ride-keep-alive/android/src/main/AndroidManifest.xml
+	android:targetSdkVersion
+		INJECTED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/ride-keep-alive/android/src/main/AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from /Users/pramodkale/Desktop/NonWork/DigitalCluster/modules/ride-keep-alive/android/src/main/AndroidManifest.xml

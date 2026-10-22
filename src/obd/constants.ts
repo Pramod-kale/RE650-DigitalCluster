@@ -14,8 +14,12 @@ export const R_GAS = 8.314; // J/(mol·K) ideal gas constant
 export const AFR_STOICH = 14.7; // stoichiometric AFR for gasoline
 export const GASOLINE_DENSITY = 745.7; // g/L
 
-// Empirical correction for speed-density calc (ECU runs lean at cruise).
+// The Pi backend's speed-density correction; kept so calcFuelLh matches
+// obd.py and to recognise untouched old settings. The app's default fuel
+// calibration is 1.0 (see settings.ts): 0.36 read ~3x low on the phone.
 export const DEFAULT_FUEL_CORRECTION_FACTOR = 0.36;
+// Volumetric efficiency: fixed. It only scales the estimate, like the
+// calibration factor, so one refuel-calibrated factor covers both.
 export const DEFAULT_VE = 0.85;
 
 // Transmission (manual p.4)
@@ -30,6 +34,7 @@ export const GEAR_RATIOS: Record<number, number> = {
 export const PRIMARY_RATIO = 2.05;
 export const SECONDARY_RATIO = 2.533;
 export const TIRE_CIRCUM_M = 2.008; // 130/70 R18 rear tire
+export const TANK_L = 13.7; // fuel tank capacity, for the range estimate
 
 export type PidName = 'rpm' | 'speed' | 'tps' | 'map' | 'iat' | 'eot' | 'load';
 
@@ -47,5 +52,11 @@ export const POLL_PIDS: readonly [number, PidName][] = [
 
 // Dashboard scale
 export const SPEED_MAX = 200;
+
+// Speed readings above this can't be real: the ECU sends 0xFF (255) while the
+// speed sensor isn't ready (ignition on, engine not started).
+export const SPEED_PLAUSIBLE_MAX = 200;
+// At a standstill the ECU can report 1 km/h; treat it as stopped.
+export const STANDSTILL_KMH = 1;
 export const RPM_MAX = 8500;
 export const RPM_REDLINE = 7000;

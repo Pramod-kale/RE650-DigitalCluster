@@ -9,7 +9,7 @@
 import type { Directory } from 'expo-file-system';
 
 import type { PersistedState } from '@/engine/store';
-import { DEFAULT_SETTINGS, sanitizeSettings, type Settings } from '@/settings/settings';
+import { DEFAULT_SETTINGS, migrateSettings, type Settings } from '@/settings/settings';
 
 import { externalDir, internalDir, readSlots, writeSlot } from './folder';
 
@@ -53,7 +53,8 @@ function writeAll(name: string, content: string): Error | null {
 const num = (v: unknown, dflt = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : dflt);
 const numOrNull = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
-function toState(raw: Record<string, unknown>): PersistedState {
+/** Validate a stored state object (also used for the copy synced from the cloud). */
+export function toState(raw: Record<string, unknown>): PersistedState {
   return {
     km_total: num(raw.km_total),
     fuel_total_l: num(raw.fuel_total_l),
@@ -112,7 +113,8 @@ export function saveState(s: PersistedState): Error | null {
   return writeAll(STATE_FILE, JSON.stringify(s, null, 2));
 }
 
-export function loadSettings(): Settings {
+/** Newest settings of internal/folder; `fuelScale` ≠ 1 if they were migrated. */
+export function loadSettings(): { settings: Settings; fuelScale: number } {
   let best: { saved_at: number; raw: Record<string, unknown> } | null = null;
   for (const dir of roots()) {
     for (const raw of readJson(dir, SETTINGS_FILE)) {
@@ -120,7 +122,7 @@ export function loadSettings(): Settings {
       if (!best || savedAt > best.saved_at) best = { saved_at: savedAt, raw };
     }
   }
-  return best ? sanitizeSettings(best.raw) : { ...DEFAULT_SETTINGS };
+  return best ? migrateSettings(best.raw) : { settings: { ...DEFAULT_SETTINGS }, fuelScale: 1 };
 }
 
 export function saveSettings(s: Settings): Error | null {

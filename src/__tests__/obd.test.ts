@@ -27,6 +27,12 @@ describe('decodePid (matches obd.py)', () => {
     expect(decodePid(0x0c, null)).toBeNull();
     expect(decodePid(0x0c, new Uint8Array())).toBeNull();
   });
+  // Phone-only: obd.py passed these through.
+  it('drops 0xFF speed (sensor not ready) and reads ≤1 km/h as stopped', () => {
+    expect(decodePid(0x0d, Uint8Array.from([0xff]))).toBeNull();
+    expect(decodePid(0x0d, Uint8Array.from([1]))).toBe(0);
+    expect(decodePid(0x0d, Uint8Array.from([2]))).toBe(2);
+  });
 });
 
 describe('estimateGear (matches obd.py)', () => {

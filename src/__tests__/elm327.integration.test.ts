@@ -11,6 +11,7 @@ import path from 'path';
 import { POLL_PIDS } from '@/obd/constants';
 import { decodePid } from '@/obd/decode';
 import { Elm327Client } from '@/obd/elm327';
+import { TcpTransport } from '@/obd/tcp';
 
 jest.mock('react-native-tcp-socket', () => ({
   __esModule: true,
@@ -59,7 +60,7 @@ function waitForPort(port: number, timeoutMs = 5000): Promise<void> {
   });
 
   it('handshakes, polls every PID and reads voltage', async () => {
-    const c = new Elm327Client('127.0.0.1', PORT);
+    const c = new Elm327Client(new TcpTransport('127.0.0.1', PORT));
     await c.connect();
     expect(c.connected).toBe(true);
     const values: Record<string, number | null> = {};
@@ -74,7 +75,7 @@ function waitForPort(port: number, timeoutMs = 5000): Promise<void> {
   }, 20_000);
 
   it('rejects when the dongle is unreachable', async () => {
-    const c = new Elm327Client('127.0.0.1', 1, 500);
+    const c = new Elm327Client(new TcpTransport('127.0.0.1', 1, 500), 500);
     await expect(c.connect()).rejects.toThrow();
     expect(c.connected).toBe(false);
   });

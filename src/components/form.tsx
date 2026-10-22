@@ -2,7 +2,7 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { C } from '@/theme/dash';
+import { C, F } from '@/theme/dash';
 
 type Keyboard = 'default' | 'number-pad' | 'decimal-pad' | 'numbers-and-punctuation';
 
@@ -30,22 +30,28 @@ export function Field({
   onChange,
   keyboard,
   placeholder,
+  long,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   keyboard: Keyboard;
   placeholder?: string;
+  /** Long machine values (URLs, tokens): wraps instead of scrolling sideways. */
+  long?: boolean;
 }) {
   return (
     <Row label={label}>
       <TextInput
-        style={formStyles.input}
+        style={[formStyles.input, long && formStyles.inputLong]}
         value={value}
         onChangeText={onChange}
         keyboardType={keyboard}
         autoCapitalize="none"
         autoCorrect={false}
+        spellCheck={false}
+        autoComplete="off"
+        multiline={long}
         placeholder={placeholder}
         placeholderTextColor={C.muted}
       />
@@ -68,7 +74,7 @@ export function Button({
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [formStyles.btn, primary && formStyles.btnPrimary, pressed && { opacity: 0.6 }]}>
-      <Text style={[formStyles.btnTxt, primary && { color: C.bg }, danger && { color: C.danger }]}>
+      <Text style={[formStyles.btnTxt, primary && { color: C.bright }, danger && { color: C.danger }]}>
         {label}
       </Text>
     </Pressable>
@@ -81,35 +87,40 @@ export const formStyles = StyleSheet.create({
     backgroundColor: C.panel,
     borderColor: C.border,
     borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    gap: 8,
+    borderRadius: 22,
+    padding: 16,
+    gap: 10,
   },
-  sectionTitle: { color: C.muted, fontSize: 11, letterSpacing: 2 },
+  sectionTitle: { color: C.fg, fontSize: F.body, fontWeight: '500' },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  label: { color: C.fg, fontSize: 14, flexShrink: 1 },
+  label: { color: C.fg, fontSize: F.body, flexShrink: 1 },
   input: {
-    minWidth: 160,
+    minWidth: 180,
     color: C.fg,
-    borderColor: C.border,
+    fontSize: F.body,
+    borderColor: C.line,
     borderWidth: 1,
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     backgroundColor: C.bg,
     fontVariant: ['tabular-nums'],
   },
-  hint: { color: C.muted, fontSize: 12 },
-  value: { color: C.fg, fontSize: 14 },
-  buttons: { flexDirection: 'row', gap: 8 },
+  // Wraps a long token instead of scrolling it off to one side.
+  inputLong: { minWidth: 260, maxWidth: 420, maxHeight: 110, fontSize: F.sub },
+  hint: { color: C.muted, fontSize: F.hint },
+  value: { color: C.fg, fontSize: F.body },
+  buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   btn: {
-    borderColor: C.border,
+    borderColor: C.line,
     borderWidth: 1,
-    borderRadius: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    backgroundColor: C.panel,
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    minHeight: 40,
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
   },
-  btnPrimary: { backgroundColor: C.info, borderColor: C.info },
-  btnTxt: { color: C.fg, fontSize: 14 },
+  // Primary = brighter outline, never a solid fill.
+  btnPrimary: { borderColor: C.muted, backgroundColor: '#232428' },
+  btnTxt: { color: C.fg, fontSize: F.body },
 });

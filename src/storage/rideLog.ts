@@ -14,7 +14,14 @@ import {
   readSlots,
   writeSlot,
 } from './folder';
-import { CSV_HEADER, csvLine, RIDE_RE, summarizeCsv, type RideSummary } from './rideSummary';
+import {
+  CSV_HEADER,
+  csvLine,
+  RIDE_RE,
+  summarizeCsv,
+  SUMMARY_VERSION,
+  type RideSummary,
+} from './rideSummary';
 
 const CSV_MIME = 'text/csv';
 const INDEX_FILE = 'rides_index.json';
@@ -170,11 +177,12 @@ export function listRides(openRide: string | null): RideSummary[] {
   const out: RideSummary[] = [];
   for (const name of names) {
     let s = idx.rides[name];
-    if (!s || name === openRide) {
+    if (!s || s.v !== SUMMARY_VERSION || name === openRide) {
       const f = locate(name);
       if (!f) continue;
       try {
-        s = summarizeCsv(name, f.textSync());
+        const device = s?.device; // not in the CSV
+        s = { ...summarizeCsv(name, f.textSync()), ...(device ? { device } : {}) };
       } catch (e) {
         console.warn(`[ride] could not read ${name}`, e);
         continue;
@@ -197,6 +205,19 @@ export function listRides(openRide: string | null): RideSummary[] {
   return out.sort((a, b) => b.startedAt - a.startedAt || b.name.localeCompare(a.name));
 }
 
+/** Store a ride recorded on another phone (cloud sync) like a local one. */
+export function importRide(name: string, csv: string, device: string) {
+  const f = childFile(internalDir(), name, CSV_MIME);
+  f.write(csv);
+  recordSummary({ ...summarizeCsv(name, csv), device });
+}
+
+/** A ride's CSV text, or null if the file is gone. */
+export function readRide(name: string): string | null {
+  return locate(name)?.textSync() ?? null;
+}
+
+/** Delete a ride from this phone (cloud sync is told separately). */
 export function deleteRide(name: string) {
   for (const dir of roots()) {
     try {

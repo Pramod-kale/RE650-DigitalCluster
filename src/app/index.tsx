@@ -1,170 +1,186 @@
-import { Image } from 'expo-image';
+/**
+ * The dashboard. Landscape: speed card · minimap · throttle/load + readings,
+ * fuel strip below. Portrait: the same blocks stacked. Greys carry the layout;
+ * accents only mark zones (speed / rpm / throttle / load) and states.
+ */
 import { useKeepAwake } from 'expo-keep-awake';
-import { Link, router } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { BigCell, cellBase } from '@/components/dash/big-cell';
-import { MetricTile } from '@/components/dash/metric-tile';
-import { StatusPill } from '@/components/dash/status-pill';
-import { useObd, useRuntime } from '@/engine/hooks';
-import { chooseFolder } from '@/engine/runtime';
+import { RidePausedModal, TopBanner } from '@/components/dash/alerts';
+import { MiniMap } from '@/components/dash/mini-map';
+import { FuelStrip, PctTile, StatTile } from '@/components/dash/readings';
+import { SpeedCard } from '@/components/dash/speed-card';
+import { Chip, PillButton } from '@/components/ui';
+import { useNow, useObd, useRide } from '@/engine/hooks';
 import { fmtKmL } from '@/engine/units';
-import { RPM_MAX, RPM_REDLINE, SPEED_MAX } from '@/obd/constants';
-import { C, eotTone, fmt, voltTone } from '@/theme/dash';
+import { TANK_L } from '@/obd/constants';
+import { parseRideName } from '@/storage/rideSummary';
+import { C, eotTone, fmt, toneColor, voltTone, type Tone } from '@/theme/dash';
+
+/** Accent for out-of-range readings only; normal values stay plain. */
+function alarm(t: Tone, connected: boolean): string | undefined {
+  if (!connected) return undefined;
+  return t === 'warn' || t === 'danger' || t === 'cool' ? toneColor[t] : undefined;
+}
+
+function clock(ms: number): string {
+  const m = Math.max(0, Math.floor(ms / 60_000));
+  return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+}
 
 export default function Dashboard() {
   useKeepAwake(); // phone is the bike's dash: never let the screen sleep
-  const { data, session, tank, link } = useObd();
-  const { ready, folderUri, storageError } = useRuntime();
+  const { data, session, tank, odometer, link } = useObd();
+  const ride = useRide();
+  const now = useNow();
+  const { width, height } = useWindowDimensions();
+  const portrait = height > width;
 
-  const speedPct = (data.speed / SPEED_MAX) * 100;
-  const rpmPct = (data.rpm / RPM_MAX) * 100;
-  const redlinePct = (RPM_REDLINE / RPM_MAX) * 100;
+  const recording = ride.name != null;
+  const startedAt = ride.name ? parseRideName(ride.name)?.startedAt : null;
+
+  // ---- top bar chips
+  const rec = recording ? (
+    ride.pausedAt != null ? (
+      <Chip icon="pause" label="Paused" />
+    ) : (
+      <Chip dot={C.danger} label="REC" value={startedAt ? clock(now - startedAt) : undefined} />
+    )
+  ) : null;
+  const bike = ride.noBike ? (
+    <Chip icon="bike" label="Bike lost · GPS only" tone={C.warn} />
+  ) : data.connected ? (
+    <Chip icon="bike" iconColor={C.success} label={link === 'mock data' ? 'Bike · mock' : 'Bike'} />
+  ) : (
+    <Chip icon="bike" label="Bike" value={link} />
+  );
+  const gps = ride.gpsLost ? (
+    <Chip icon="gpsOff" label="GPS lost" tone={C.warn} />
+  ) : (
+    <Chip icon="gps" iconColor={recording ? C.success : undefined} label="GPS" />
+  );
+  const trip = <Chip icon="route" label="Trip" value={`${fmt(session.kmTotal, 1, '0')} km`} />;
+  const refuel = <PillButton icon="fuel" label="Refuel" strong onPress={() => router.push('/fuel')} />;
+  const rides = <PillButton icon="map" label="Rides" onPress={() => router.push('/rides')} />;
+  const settings = <PillButton icon="settings" onPress={() => router.push('/settings')} />;
+
+  // ---- fuel / range
+  const leftL = Math.max(0, TANK_L - tank.sinceFillL);
+  const kml = tank.kmPerL ?? odometer.kmPerL;
+  const fuel = (
+    <FuelStrip
+      km={tank.sinceFillKm}
+      litres={tank.sinceFillL}
+      leftPct={(leftL / TANK_L) * 100}
+      rangeKm={kml ? leftL * kml : null}
+      card={portrait}
+    />
+  );
+
+  const avgKmh = session.elapsedMin > 1 ? session.kmTotal / (session.elapsedMin / 60) : null;
+  const map = <MiniMap recording={recording} avgKmh={avgKmh} noBike={ride.noBike} />;
+
+  const tiles = (size: 'sm' | 'md') => [
+    <StatTile key="oil" size={size} label="Oil" value={fmt(data.eot, 0)} unit="°C" color={alarm(eotTone(data.eot), data.connected)} />,
+    <StatTile key="air" size={size} label="Air" value={fmt(data.iat, 0)} unit="°C" />,
+    <StatTile
+      key="batt"
+      size={size}
+      label="Battery"
+      value={fmt(data.voltage, 1)}
+      unit="V"
+      color={alarm(voltTone(data.voltage, data.connected), data.connected)}
+    />,
+    <StatTile key="eco" size={size} label="Economy" value={fmtKmL(data.kmPerL)} unit="km/L" />,
+  ];
 
   return (
-    <SafeAreaView style={styles.dash} edges={['left', 'right', 'top', 'bottom']}>
-      <View style={styles.topbar}>
-        <Image
-          source={require('@/assets/images/logo_largo.webp')}
-          style={styles.brand}
-          contentFit="contain"
-        />
-        <StatusPill connected={data.connected} staleSeconds={data.staleSeconds} link={link} />
-        <View style={styles.nav}>
-          <Link href="/fuel" asChild>
-            <Pressable style={styles.navBtn} hitSlop={8}>
-              <Text style={styles.navTxt}>FUEL</Text>
-            </Pressable>
-          </Link>
-          <Link href="/rides" asChild>
-            <Pressable style={styles.navBtn} hitSlop={8}>
-              <Text style={styles.navTxt}>RIDES</Text>
-            </Pressable>
-          </Link>
-          <Link href="/settings" asChild>
-            <Pressable style={styles.navBtn} hitSlop={8}>
-              <Text style={styles.navTxt}>⚙</Text>
-            </Pressable>
-          </Link>
-        </View>
-      </View>
-
-      {ready && (!folderUri || storageError) ? (
-        <Pressable style={styles.banner} onPress={chooseFolder}>
-          <Text style={styles.bannerTxt}>
-            {storageError
-              ? `⚠ ${storageError} — tap to pick the storage folder again`
-              : '⚠ Tap to pick a storage folder (e.g. Documents/RE650) so rides & odometer survive reinstall'}
-          </Text>
-        </Pressable>
-      ) : null}
-
-      <View style={[styles.grid, !data.connected && styles.stale]}>
-        <BigCell
-          flex={1.6}
-          label="SPEED"
-          value={fmt(data.speed, 0, '0')}
-          unit="km/h"
-          pct={speedPct}
-          ticks={['0', '100', String(SPEED_MAX)]}
-        />
-        <BigCell
-          flex={1.2}
-          label="RPM"
-          value={fmt(data.rpm, 0, '0')}
-          pct={rpmPct}
-          ticks={['0', String(RPM_REDLINE), String(RPM_MAX)]}
-          redlinePct={redlinePct}
-          alert={data.rpm >= RPM_REDLINE}
-        />
-        <View style={[cellBase, styles.gear]}>
-          <Text style={styles.micro}>GEAR</Text>
-          <Text style={styles.gearNum} adjustsFontSizeToFit numberOfLines={1}>
-            {data.gear ?? '–'}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.strip}>
-        <MetricTile label="OIL" value={fmt(data.eot, 0)} unit="°C" tone={eotTone(data.eot)} />
-        <MetricTile label="AIR" value={fmt(data.iat, 0)} unit="°C" />
-        <MetricTile
-          label="VOLT"
-          value={fmt(data.voltage, 1)}
-          unit="V"
-          tone={voltTone(data.voltage, data.connected)}
-        />
-        <MetricTile label="THROTTLE" value={fmt(data.tps, 0)} unit="%" />
-        <MetricTile label="LOAD" value={fmt(data.load, 0)} unit="%" />
-        <MetricTile label="km/L" value={fmtKmL(data.kmPerL)} tone="accent" />
-      </View>
-
-      <View style={styles.foot}>
-        <Pressable
-          onPress={() => router.push('/refuel')}
-          style={({ pressed }) => [styles.tankBtn, pressed && styles.tankBtnPressed]}>
-          <Text style={styles.tankTxt}>⛽ Refuel</Text>
-        </Pressable>
-        <Text style={styles.footTxt}>
-          Since refuel <Text style={styles.b}>{fmt(tank.sinceFillL, 2, '0.00')}</Text> L ·{' '}
-          <Text style={styles.b}>{fmt(tank.sinceFillKm, 1, '0')}</Text> km · avg{' '}
-          <Text style={styles.b}>{fmtKmL(tank.kmPerL)}</Text> km/L
-        </Text>
-        <Text style={[styles.footTxt, styles.session]}>
-          Session <Text style={styles.b}>{fmt(session.elapsedMin, 0)}</Text> min · Vmax{' '}
-          <Text style={styles.b}>{fmt(session.vMax, 0)}</Text>
-        </Text>
-      </View>
+    <SafeAreaView style={[styles.dash, portrait && styles.dashPortrait]} edges={['left', 'right', 'top', 'bottom']}>
+      {portrait ? (
+        <>
+          <View style={styles.bar}>
+            {rec}
+            {bike}
+            {gps}
+            <View style={styles.push}>{settings}</View>
+          </View>
+          <View style={styles.bar}>
+            {trip}
+            <View style={[styles.push, styles.buttons]}>
+              {rides}
+              {refuel}
+            </View>
+          </View>
+          <SpeedCard speed={data.speed} rpm={data.rpm} gear={data.gear} big={124} style={{ flex: 1.25 }} />
+          <View style={{ flex: 1 }}>{map}</View>
+          <View style={styles.grid3}>
+            {tiles('md').map((t) => (
+              <View key={t.key} style={styles.cell3}>
+                {t}
+              </View>
+            ))}
+            <View style={styles.cell3}>
+              <PctTile label="Throttle" value={data.tps} />
+            </View>
+            <View style={styles.cell3}>
+              <PctTile label="Load" value={data.load} />
+            </View>
+          </View>
+          {fuel}
+        </>
+      ) : (
+        <>
+          <View style={styles.bar}>
+            {rec}
+            {bike}
+            {gps}
+            {trip}
+            <View style={[styles.push, styles.buttons]}>
+              {refuel}
+              {rides}
+              {settings}
+            </View>
+          </View>
+          <View style={styles.main}>
+            <SpeedCard speed={data.speed} rpm={data.rpm} gear={data.gear} big={110} style={styles.speedL} />
+            {map}
+            <View style={styles.right}>
+              <View style={styles.pcts}>
+                <PctTile label="Throttle" value={data.tps} vertical />
+                <PctTile label="Load" value={data.load} vertical />
+              </View>
+              <View style={styles.grid2}>
+                {tiles('sm').map((t) => (
+                  <View key={t.key} style={styles.cell2}>
+                    {t}
+                  </View>
+                ))}
+              </View>
+            </View>
+          </View>
+          {fuel}
+        </>
+      )}
+      <TopBanner />
+      <RidePausedModal />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  dash: { flex: 1, backgroundColor: C.bg, paddingHorizontal: 10, paddingVertical: 6, gap: 6 },
-  topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  brand: { height: 22, width: 110 },
-  nav: { flexDirection: 'row', gap: 8 },
-  navBtn: {
-    borderColor: C.border,
-    borderWidth: 1,
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    backgroundColor: C.panel,
-  },
-  navTxt: { color: C.fg, fontSize: 12, letterSpacing: 1 },
-  banner: {
-    backgroundColor: '#3a2a05',
-    borderColor: C.warn,
-    borderWidth: 1,
-    borderRadius: 6,
-    padding: 6,
-  },
-  bannerTxt: { color: C.warn, fontSize: 12 },
-  grid: { flex: 1, flexDirection: 'row', gap: 8, minHeight: 0 },
-  stale: { opacity: 0.55 },
-  micro: { fontSize: 10, letterSpacing: 2, color: C.muted, marginBottom: 2 },
-  gear: { flex: 0.8, alignItems: 'center' },
-  gearNum: {
-    fontSize: 88,
-    fontWeight: '800',
-    color: C.info,
-    fontVariant: ['tabular-nums'],
-  },
-  strip: { flexDirection: 'row', gap: 6 },
-  foot: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
-  tankBtn: {
-    backgroundColor: C.panel,
-    borderColor: C.border,
-    borderWidth: 1,
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  tankBtnPressed: { backgroundColor: C.info },
-  tankTxt: { color: C.fg, fontSize: 13 },
-  footTxt: { color: C.muted, fontSize: 13 },
-  b: { color: C.fg, fontWeight: '700' },
-  session: { marginLeft: 'auto' },
+  dash: { flex: 1, backgroundColor: C.bg, paddingHorizontal: 20, paddingVertical: 12, gap: 10 },
+  dashPortrait: { paddingHorizontal: 14 },
+  bar: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 40 },
+  push: { marginLeft: 'auto' },
+  buttons: { flexDirection: 'row', gap: 6 },
+  main: { flex: 1, flexDirection: 'row', gap: 10, minHeight: 0 },
+  speedL: { width: 268 },
+  right: { width: 196, gap: 8 },
+  pcts: { flex: 1, flexDirection: 'row', gap: 8, minHeight: 0 },
+  grid2: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  cell2: { width: 95 },
+  grid3: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  cell3: { width: '31.8%', height: 72 },
 });

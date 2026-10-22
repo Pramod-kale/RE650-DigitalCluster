@@ -1,18 +1,12 @@
 /**
- * ELM327 client over raw TCP (WiFi dongle). Port of ELM327Client in backend/obd.py.
- *
- * The socket is bound to the WiFi interface: the dongle's AP has no internet, and
- * without binding Android may route 192.168.0.10 over mobile data instead.
+ * ELM327 client over a byte transport (Wi-Fi TCP or Bluetooth). Port of
+ * ELM327Client in backend/obd.py.
  */
-import TcpSocket from 'react-native-tcp-socket';
-
-import { DEFAULT_HOST, DEFAULT_PORT, TIMEOUT_MS } from './constants';
+import { TIMEOUT_MS } from './constants';
 import { cleanResponse, parsePidResponse, parseVoltage } from './parse';
+import { ConnectionError, type Transport } from './transport';
 
-type Socket = ReturnType<typeof TcpSocket.createConnection>;
-
-/** Raised on any transport failure; the poller reconnects on it (OSError in Python). */
-export class ConnectionError extends Error {}
+export { ConnectionError };
 
 type Pending = {
   resolve: (text: string) => void;
@@ -21,24 +15,33 @@ type Pending = {
 };
 
 export class Elm327Client {
-  private sock: Socket | null = null;
+  private open = false;
   private rx = '';
   private pending: Pending | null = null;
   // Serializes commands: one in flight at a time (the Python client used a lock).
   private queue: Promise<unknown> = Promise.resolve();
 
   constructor(
-    private host: string = DEFAULT_HOST,
-    private port: number = DEFAULT_PORT,
+    readonly transport: Transport,
     private timeoutMs: number = TIMEOUT_MS,
   ) {}
 
   get connected(): boolean {
-    return this.sock != null;
+    return this.open;
   }
 
   async connect(): Promise<void> {
-    await this.openSocket();
+    await this.transport.open({
+      data: (chunk) => {
+        this.rx += chunk;
+        if (this.pending && this.rx.includes('>')) this.finishPending();
+      },
+      close: () => {
+        if (this.open) this.close();
+      },
+    });
+    this.open = true;
+    this.rx = '';
     // Handshake
     await this.send('ATZ', 1500);
     await this.send('ATE0');
@@ -51,17 +54,10 @@ export class Elm327Client {
   }
 
   close(): void {
-    const s = this.sock;
-    this.sock = null;
+    this.open = false;
     this.rx = '';
     this.failPending(new ConnectionError('closed'));
-    if (s) {
-      try {
-        s.destroy();
-      } catch {
-        // already gone
-      }
-    }
+    this.transport.close();
   }
 
   async queryPid(pid: number): Promise<Uint8Array | null> {
@@ -74,42 +70,6 @@ export class Elm327Client {
     return parseVoltage(await this.send('ATRV'));
   }
 
-  private openSocket(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      const sock = TcpSocket.createConnection(
-        {
-          host: this.host,
-          port: this.port,
-          interface: 'wifi',
-          connectTimeout: this.timeoutMs,
-        },
-        () => {
-          settled = true;
-          this.sock = sock;
-          this.rx = '';
-          resolve();
-        },
-      );
-      sock.on('data', (chunk) => {
-        this.rx += typeof chunk === 'string' ? chunk : chunk.toString('latin1');
-        if (this.pending && this.rx.includes('>')) this.finishPending();
-      });
-      sock.on('error', (err) => {
-        if (!settled) {
-          settled = true;
-          sock.destroy();
-          reject(new ConnectionError(String(err?.message ?? err)));
-        } else if (this.sock === sock) {
-          this.close();
-        }
-      });
-      sock.on('close', () => {
-        if (this.sock === sock) this.close();
-      });
-    });
-  }
-
   /**
    * Send a command and return the cleaned response. Resolves on the `>` prompt,
    * or on timeout with whatever arrived (same as socket.timeout in Python).
@@ -117,8 +77,7 @@ export class Elm327Client {
   send(cmd: string, waitMs = 50): Promise<string> {
     const run = () =>
       new Promise<string>((resolve, reject) => {
-        const sock = this.sock;
-        if (!sock) {
+        if (!this.open) {
           reject(new ConnectionError('ELM327 not connected'));
           return;
         }
@@ -129,10 +88,11 @@ export class Elm327Client {
           reject,
           timer,
         };
+        const fail = (e: unknown) => this.failPending(new ConnectionError(String(e)));
         try {
-          sock.write(`${cmd}\r`, 'ascii');
+          void Promise.resolve(this.transport.write(`${cmd}\r`)).catch(fail);
         } catch (e) {
-          this.failPending(new ConnectionError(String(e)));
+          fail(e);
         }
       });
     const next = this.queue.then(run, run);

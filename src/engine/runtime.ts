@@ -16,6 +16,12 @@ import type { FuelEntry } from '@/fuel/fuelMath';
 import { syncRidesToExternal } from '@/storage/rideLog';
 import { DEFAULT_SETTINGS, sanitizeSettings, type Settings } from '@/settings/settings';
 
+import { initCloud, requestSync } from '@/cloud/sync';
+
+import { requestBtPermission } from '@/obd/bluetooth';
+
+import * as gps from './gps';
+import { setupNotifications } from './notify';
 import * as poller from './poller';
 import * as ride from './ride';
 import * as store from './store';
@@ -68,6 +74,9 @@ function maybePersist() {
 }
 
 let started = false;
+// Returning to the app syncs at most this often.
+const FOREGROUND_SYNC_MS = 5 * 60_000;
+let lastForegroundSync = 0;
 
 /** Idempotent; call once from the root layout. */
 export function init() {
@@ -77,8 +86,15 @@ export function init() {
   let settings = { ...DEFAULT_SETTINGS };
   try {
     loadExternalDir();
-    settings = loadSettings();
+    const loaded = loadSettings();
+    settings = loaded.settings;
     store.restorePersisted(loadState());
+    if (loaded.fuelScale !== 1) {
+      // Older fuel settings were migrated: bring stored litres onto the new factor.
+      store.rescaleFuel(loaded.fuelScale);
+      saveSettings(settings);
+      persistNow();
+    }
     syncRidesToExternal(null);
     loadFuelLog();
   } catch (e) {
@@ -87,7 +103,30 @@ export function init() {
   }
   setInfo({ ready: true, settings, folderUri: externalDir()?.uri ?? null });
 
+  // Before the poller can start a ride: clear updates left by a killed run,
+  // then ask for location so the prompt never interrupts a ride.
+  void gps
+    .stopStale()
+    .then(() => gps.requestPermission())
+    .then(() => (info.settings.transport === 'bluetooth' ? requestBtPermission() : true));
+  void setupNotifications({ end: ride.closeRide, keep: ride.keepRide });
   poller.start(settings, { onCycle: maybePersist });
+
+  void initCloud({
+    getFuelCalibration: () => ({
+      value: info.settings.fuelCorrection,
+      at: info.settings.fuelCorrectionAt,
+    }),
+    setFuelCalibration: (value, at) => updateSettings({ fuelCorrection: value, fuelCorrectionAt: at }),
+    persist: persistNow,
+  });
+  // Share a ride as soon as it's finished.
+  let openRide = ride.getRideStatus().name;
+  ride.subscribeRide(() => {
+    const now = ride.getRideStatus().name;
+    if (openRide && now !== openRide) void requestSync();
+    openRide = now;
+  });
 
   // Idle-close rides and persist even while the poller is stuck reconnecting.
   setInterval(() => {
@@ -100,6 +139,9 @@ export function init() {
     if (s !== 'active') {
       ride.flushRide();
       persistNow();
+    } else if (Date.now() - lastForegroundSync > FOREGROUND_SYNC_MS) {
+      lastForegroundSync = Date.now();
+      void requestSync(); // pick up what other phones did meanwhile
     }
   });
 }
@@ -141,6 +183,7 @@ export function addRefuel(input: RefuelInput) {
   store.markTankFull(t);
   ride.flushRide();
   persistNow(); // immediate: don't lose the marker on a crash
+  void requestSync();
 }
 
 /** Edit what was entered at the pump. Distance/estimate are measured, not editable. */
@@ -149,6 +192,7 @@ export function updateRefuel(id: string, patch: Partial<RefuelInput>) {
   storageMsg(
     saveFuelLog(getEntries().map((e) => (e.id === id ? { ...e, ...patch, updatedAt: now } : e))),
   );
+  void requestSync();
 }
 
 /**
@@ -179,6 +223,7 @@ export function deleteRefuel(id: string) {
     store.restoreTank(gone.km, est, live[i - 1]?.t ?? null);
     persistNow();
   }
+  void requestSync();
 }
 
 export function resetSession() {
@@ -186,18 +231,30 @@ export function resetSession() {
 }
 
 export function updateSettings(patch: Partial<Settings>) {
-  const next = sanitizeSettings({ ...info.settings, ...patch });
+  const prev = info.settings;
+  const next = sanitizeSettings({ ...prev, ...patch });
+  // A change made here (not one synced from another phone) gets a new timestamp.
+  if (next.fuelCorrection !== prev.fuelCorrection && patch.fuelCorrectionAt == null) {
+    next.fuelCorrectionAt = Date.now();
+  }
   const err = saveSettings(next);
   const restart =
-    next.mock !== info.settings.mock ||
-    next.host !== info.settings.host ||
-    next.port !== info.settings.port ||
-    next.pollIntervalMs !== info.settings.pollIntervalMs ||
-    next.ve !== info.settings.ve ||
-    next.fuelCorrection !== info.settings.fuelCorrection;
+    next.mock !== prev.mock ||
+    next.transport !== prev.transport ||
+    JSON.stringify(next.btDevice) !== JSON.stringify(prev.btDevice) ||
+    next.host !== prev.host ||
+    next.port !== prev.port ||
+    next.pollIntervalMs !== prev.pollIntervalMs ||
+    next.fuelCorrection !== prev.fuelCorrection;
   setInfo({ settings: next, storageError: err ? `could not save: ${err.message}` : null });
+  if (next.fuelCorrection !== prev.fuelCorrection) {
+    store.rescaleFuel(next.fuelCorrection / prev.fuelCorrection);
+    persistNow();
+    if (patch.fuelCorrectionAt == null) void requestSync();
+  }
+  if (next.transport === 'bluetooth' && prev.transport !== 'bluetooth') void requestBtPermission();
   if (restart) {
-    ride.closeRide(); // don't mix mock and real rows in one CSV
+    if (next.mock !== prev.mock) ride.closeRide(); // don't mix mock and real rows in one CSV
     poller.start(next, { onCycle: maybePersist });
   }
 }
@@ -217,7 +274,7 @@ export async function chooseFolder(): Promise<boolean> {
     loadFuelLog();
     saveFuelLog(getEntries());
     setInfo({ folderUri: dir.uri });
-    const s = loadSettings(); // newest of internal/folder
+    const s = loadSettings().settings; // newest of internal/folder
     if (JSON.stringify(s) !== JSON.stringify(info.settings)) updateSettings(s);
     else saveSettings(info.settings);
   } catch (e) {

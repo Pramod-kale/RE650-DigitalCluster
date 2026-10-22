@@ -10,6 +10,8 @@ web-build/
 expo-env.d.ts
 
 # Native
+# APKs downloaded for GitHub releases
+builds/
 .kotlin/
 *.orig.*
 *.jks

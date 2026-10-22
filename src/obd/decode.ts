@@ -13,8 +13,20 @@ import {
   PRIMARY_RATIO,
   R_GAS,
   SECONDARY_RATIO,
+  SPEED_PLAUSIBLE_MAX,
+  STANDSTILL_KMH,
   TIRE_CIRCUM_M,
 } from './constants';
+
+/**
+ * Vehicle speed as the app should use it: null for impossible readings (0xFF
+ * before the engine starts), 0 for the ~1 km/h the ECU reports when stopped.
+ * Also applied when reading old ride CSVs, which still contain raw values.
+ */
+export function cleanSpeed(kmh: number): number | null {
+  if (!Number.isFinite(kmh) || kmh > SPEED_PLAUSIBLE_MAX) return null;
+  return kmh <= STANDSTILL_KMH ? 0 : kmh;
+}
 
 export function decodePid(pid: number, data: Uint8Array | null): number | null {
   if (data == null || data.length === 0) return null;
@@ -24,7 +36,7 @@ export function decodePid(pid: number, data: Uint8Array | null): number | null {
     case 0x04: return (A * 100.0) / 255; // engine load %
     case 0x0b: return A; // MAP kPa
     case 0x0c: return (A * 256 + B) / 4.0; // RPM
-    case 0x0d: return A; // speed km/h
+    case 0x0d: return cleanSpeed(A); // speed km/h
     case 0x0e: return A / 2.0 - 64; // timing advance °
     case 0x0f: return A - 40.0; // IAT °C
     case 0x11: return (A * 100.0) / 255; // TPS %

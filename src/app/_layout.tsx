@@ -4,7 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
 import { init } from '@/engine/runtime';
-import { C } from '@/theme/dash';
+import { C, F } from '@/theme/dash';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -27,12 +27,15 @@ export default function RootLayout() {
         screenOptions={{
           headerStyle: { backgroundColor: C.panel },
           headerTintColor: C.fg,
+          headerTitleStyle: { fontSize: F.stat },
           contentStyle: { backgroundColor: C.bg },
         }}>
         <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="settings" options={{ title: 'Settings' }} />
-        <Stack.Screen name="rides" options={{ title: 'Rides' }} />
-        <Stack.Screen name="fuel" options={{ title: 'Fuel log' }} />
+        <Stack.Screen name="settings" options={{ headerShown: false }} />
+        <Stack.Screen name="rides" options={{ headerShown: false }} />
+        <Stack.Screen name="ride/[name]" options={{ headerShown: false }} />
+        <Stack.Screen name="trackback" options={{ headerShown: false }} />
+        <Stack.Screen name="fuel" options={{ headerShown: false }} />
         <Stack.Screen name="refuel" options={{ title: 'Refuel' }} />
       </Stack>
     </ThemeProvider>

@@ -82,4 +82,29 @@ describe('summarizeCsv', () => {
     expect(summarizeCsv('ride_20260426_235959.csv', csv).km).toBeCloseTo((60 * 2) / 3600, 2); // summary rounds km to 2 dp
     expect(summarizeCsv('x.csv', '').rows).toBe(0);
   });
+  it('real log: 255 at engine start and 1 km/h with the engine off add no distance', () => {
+    // Excerpt of ride_20260928_132028.csv (restart at a stop, then parked with ignition on).
+    const csv =
+      header +
+      '13:24:21,0,0,15.69,90.0,30.0,0.0,27.06,12.30,0.000,\n' +
+      '13:24:22,0,255,15.69,38.0,30.0,0.0,21.96,14.10,0.000,\n' +
+      '13:24:24,1774,0,15.69,26.0,30.0,0.0,31.37,14.00,0.288,\n' +
+      '13:24:25,1815,0,21.96,37.0,30.0,0.0,34.90,14.50,0.419,\n' +
+      '13:25:49,0,0,15.69,91.0,31.0,0.0,27.45,12.50,0.000,\n' +
+      '13:25:52,0,1,15.69,91.0,31.0,0.0,27.45,12.80,0.000,\n' +
+      '13:25:53,0,1,15.69,91.0,31.0,0.0,27.45,12.80,0.000,\n' +
+      '13:25:56,0,1,15.69,91.0,31.0,0.0,27.45,12.80,0.000,\n';
+    const r = summarizeCsv('ride_20260928_132028.csv', csv);
+    expect(r.vMax).toBe(0);
+    expect(r.km).toBe(0);
+  });
+  it('ignores 255 km/h (engine not started) and 1 km/h (stopped) in old rides', () => {
+    let csv = header;
+    for (let sec = 0; sec < 30; sec++) csv += `10:00:${String(sec).padStart(2, '0')},0,255,0,0,25,0,0,12.4,0,\n`;
+    for (let sec = 30; sec < 60; sec++) csv += `10:00:${sec},1100,1,0,30,25,40,20,13.8,0.3,\n`;
+    const r = summarizeCsv('ride_20260426_100000.csv', csv);
+    expect(r.vMax).toBe(0);
+    expect(r.km).toBe(0);
+    expect(r.v).toBe(2);
+  });
 });

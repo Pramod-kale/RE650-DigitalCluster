@@ -3,8 +3,10 @@
  */
 import { POLL_PIDS } from '@/obd/constants';
 import { decodePid } from '@/obd/decode';
+import { BtTransport } from '@/obd/bluetooth';
 import { ConnectionError, Elm327Client } from '@/obd/elm327';
 import { mockValues } from '@/obd/mock';
+import { TcpTransport } from '@/obd/tcp';
 import type { Settings } from '@/settings/settings';
 
 import * as ride from './ride';
@@ -14,6 +16,9 @@ import * as store from './store';
 // the phone connected before the bike was on, so the ELM327 never detected
 // the protocol and every query returns NO DATA.
 const NO_DATA_THRESHOLD = 5;
+// Retry the dongle at most this far apart: after a stop the ride should be
+// picked up within seconds of the ignition coming back on.
+const MAX_BACKOFF_MS = 10_000;
 
 type Hooks = { onCycle: () => void };
 
@@ -55,8 +60,19 @@ export function stop() {
   store.setConnected(false);
 }
 
+function makeClient(s: Settings): Elm327Client | null {
+  if (s.transport === 'bluetooth') {
+    return s.btDevice ? new Elm327Client(new BtTransport(s.btDevice)) : null;
+  }
+  return new Elm327Client(new TcpTransport(s.host, s.port));
+}
+
 async function obdLoop(id: number, s: Settings, hooks: Hooks) {
-  const c = new Elm327Client(s.host, s.port);
+  const c = makeClient(s);
+  if (!c) {
+    store.setLink('no Bluetooth dongle chosen — pick one in Settings');
+    return;
+  }
   client = c;
   let backoff = 1000;
   let consecutiveNoData = 0;
@@ -65,7 +81,7 @@ async function obdLoop(id: number, s: Settings, hooks: Hooks) {
     // Reconnect loop
     if (!c.connected) {
       try {
-        store.setLink(`connecting to ${s.host}:${s.port}`);
+        store.setLink(`connecting to ${c.transport.label}`);
         await c.connect();
         if (!alive(id)) break;
         store.setConnected(true);
@@ -75,10 +91,11 @@ async function obdLoop(id: number, s: Settings, hooks: Hooks) {
         c.close();
         if (!alive(id)) break; // stopped/restarted: don't clobber the new loop's status
         store.setConnected(false);
-        store.setLink(`no dongle — retry in ${Math.round(backoff / 1000)}s`);
+        const why = e instanceof ConnectionError && s.transport === 'bluetooth' ? `${e.message} — ` : '';
+        store.setLink(`no dongle — ${why}retry in ${Math.round(backoff / 1000)}s`);
         console.warn('[poller] connect failed', e);
         await sleep(backoff);
-        backoff = Math.min(backoff * 2, 30_000);
+        backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
         continue;
       }
     }
@@ -92,7 +109,7 @@ async function obdLoop(id: number, s: Settings, hooks: Hooks) {
         if (!alive(id)) return;
         if (v != null) {
           cycleHadData = true;
-          store.applyPid(name, v, s.ve, s.fuelCorrection);
+          store.applyPid(name, v, s.fuelCorrection);
         }
       }
       const volt = await c.queryVoltage();
@@ -137,7 +154,7 @@ async function mockLoop(id: number, s: Settings, hooks: Hooks) {
   const tStart = Date.now();
   while (alive(id)) {
     const v = mockValues((Date.now() - tStart) / 1000);
-    store.applySample(v, s.ve, s.fuelCorrection);
+    store.applySample(v, s.fuelCorrection);
     ride.tick(store.csvRow(), true);
     hooks.onCycle();
     await sleep(s.pollIntervalMs);

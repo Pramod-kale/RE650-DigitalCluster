@@ -1,0 +1,113 @@
+diff --git a/node_modules/react-native-tcp-socket/android/src/main/java/com/asterinet/react/tcpsocket/TcpSocketClient.java b/node_modules/react-native-tcp-socket/android/src/main/java/com/asterinet/react/tcpsocket/TcpSocketClient.java
+index 7511570..c928b4d 100644
+--- a/node_modules/react-native-tcp-socket/android/src/main/java/com/asterinet/react/tcpsocket/TcpSocketClient.java
++++ b/node_modules/react-native-tcp-socket/android/src/main/java/com/asterinet/react/tcpsocket/TcpSocketClient.java
+@@ -171,6 +171,12 @@ class TcpSocketClient extends TcpSocket {
+         });
+     }
+ 
++    /** Stop the per-client threads once the socket is destroyed; queued work still runs. */
++    public void shutdown() {
++        listenExecutor.shutdown();
++        writeExecutor.shutdown();
++    }
++
+     public ReadableMap getPeerCertificate() {
+         return SSLCertificateHelper.getCertificateInfo(socket, true);
+     }
+diff --git a/node_modules/react-native-tcp-socket/android/src/main/java/com/asterinet/react/tcpsocket/TcpSocketModule.java b/node_modules/react-native-tcp-socket/android/src/main/java/com/asterinet/react/tcpsocket/TcpSocketModule.java
+index 121edb4..07e7bf0 100644
+--- a/node_modules/react-native-tcp-socket/android/src/main/java/com/asterinet/react/tcpsocket/TcpSocketModule.java
++++ b/node_modules/react-native-tcp-socket/android/src/main/java/com/asterinet/react/tcpsocket/TcpSocketModule.java
+@@ -128,7 +128,11 @@ public class TcpSocketModule extends ReactContextBaseJavaModule {
+     @SuppressWarnings("unused")
+     @ReactMethod
+     public void write(final int cId, @NonNull final String base64String, final int msgId) {
+-        TcpSocketClient socketClient = getTcpClient(cId);
++        TcpSocketClient socketClient = findTcpClient(cId);
++        if (socketClient == null) {
++            tcpEvtListener.onWritten(cId, msgId, new IOException("No socket with id " + cId));
++            return;
++        }
+         byte[] data = Base64.decode(base64String, Base64.NO_WRAP);
+         socketClient.write(msgId, data);
+     }
+@@ -140,8 +144,11 @@ public class TcpSocketModule extends ReactContextBaseJavaModule {
+         executorService.execute(new Runnable() {
+             @Override
+             public void run() {
+-                TcpSocketClient socketClient = getTcpClient(cId);
++                TcpSocketClient socketClient = findTcpClient(cId);
++                if (socketClient == null) return;
+                 socketClient.destroy();
++                socketClient.shutdown();
++                socketMap.remove(cId);
+             }
+         });
+     }
+@@ -186,7 +193,8 @@ public class TcpSocketModule extends ReactContextBaseJavaModule {
+     @SuppressWarnings("unused")
+     @ReactMethod
+     public void setNoDelay(@NonNull final Integer cId, final boolean noDelay) {
+-        final TcpSocketClient client = getTcpClient(cId);
++        final TcpSocketClient client = findTcpClient(cId);
++        if (client == null) return;
+         try {
+             client.setNoDelay(noDelay);
+         } catch (IOException e) {
+@@ -197,7 +205,8 @@ public class TcpSocketModule extends ReactContextBaseJavaModule {
+     @SuppressWarnings("unused")
+     @ReactMethod
+     public void setKeepAlive(@NonNull final Integer cId, final boolean enable, final int initialDelay) {
+-        final TcpSocketClient client = getTcpClient(cId);
++        final TcpSocketClient client = findTcpClient(cId);
++        if (client == null) return;
+         try {
+             client.setKeepAlive(enable, initialDelay);
+         } catch (IOException e) {
+@@ -208,15 +217,15 @@ public class TcpSocketModule extends ReactContextBaseJavaModule {
+     @SuppressWarnings("unused")
+     @ReactMethod
+     public void pause(final int cId) {
+-        TcpSocketClient client = getTcpClient(cId);
+-        client.pause();
++        TcpSocketClient client = findTcpClient(cId);
++        if (client != null) client.pause();
+     }
+ 
+     @SuppressWarnings("unused")
+     @ReactMethod
+     public void resume(final int cId) {
+-        TcpSocketClient client = getTcpClient(cId);
+-        client.resume();
++        TcpSocketClient client = findTcpClient(cId);
++        if (client != null) client.resume();
+     }
+ 
+     @SuppressWarnings("unused")
+@@ -414,7 +423,11 @@ public class TcpSocketModule extends ReactContextBaseJavaModule {
+                 awaitingNetwork.countDown(); // Stop waiting
+             }
+         }, 5, TimeUnit.SECONDS);
+-        awaitingNetwork.await();
++        try {
++            awaitingNetwork.await();
++        } finally {
++            exec.shutdownNow();
++        }
+     }
+ 
+     /**
+@@ -450,6 +463,12 @@ public class TcpSocketModule extends ReactContextBaseJavaModule {
+             mNetworkMap.put(iface + ipAddress, currentNetwork.getNetwork());
+     }
+ 
++    @Nullable
++    private TcpSocketClient findTcpClient(final int id) {
++        TcpSocket socket = socketMap.get(id);
++        return socket instanceof TcpSocketClient ? (TcpSocketClient) socket : null;
++    }
++
+     private TcpSocketClient getTcpClient(final int id) {
+         TcpSocket socket = socketMap.get(id);
+         if (socket == null) {
