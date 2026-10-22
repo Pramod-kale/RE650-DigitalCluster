@@ -1,7 +1,7 @@
 {
   "name": "RECluster",
   "main": "expo-router/entry",
-  "version": "1.0.0",
+  "version": "v0.1.0-beta.2",
   "dependencies": {
     "@expo-google-fonts/material-symbols": "^0.4.50",
     "@expo/ui": "~57.0.20",
