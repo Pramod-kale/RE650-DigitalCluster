@@ -2,7 +2,7 @@
   "expo": {
     "name": "RE650 Cluster",
     "slug": "DigitalCluster",
-    "version": "0.1.0-beta.2",
+    "version": "v0.1.0-beta.2",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "digitalcluster",
