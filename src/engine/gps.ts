@@ -65,7 +65,12 @@ export type LonLat = [number, number];
 const TRACK_STEP_M = 15;
 const TRACK_MAX_POINTS = 4000;
 const TRACK_EMIT_MS = 2000;
+// Fixes less accurate than this are kept out of the route; they zig-zag it.
+const TRACK_MAX_ACC_M = 25;
 let track: LonLat[] = [];
+// Mock rides draw only the synthetic loop; mixing in the phone's real fixes
+// made the line jump between the two on every point.
+let trackMock = false;
 let trackVersion = 0;
 let lastTrackEmit = 0;
 let trackTimer: ReturnType<typeof setTimeout> | null = null;
@@ -115,6 +120,12 @@ TaskManager.defineTask<{ locations: Location.LocationObject[] }>(
   LOCATION_TASK,
   async ({ data, error }) => {
     if (error || !data?.locations?.length) return;
+    if (wanted && !trackMock) {
+      for (const l of data.locations) {
+        const acc = l.coords.accuracy;
+        if (acc == null || acc <= TRACK_MAX_ACC_M) addTrackPoint(l.coords.latitude, l.coords.longitude);
+      }
+    }
     const p = data.locations[data.locations.length - 1];
     const ms = p.coords.speed;
     fix = {
@@ -125,7 +136,6 @@ TaskManager.defineTask<{ locations: Location.LocationObject[] }>(
       speed: ms != null && ms >= 0 ? ms * 3.6 : null,
       t: p.timestamp,
     };
-    if (wanted) addTrackPoint(fix.lat, fix.lon);
     try {
       fixListener?.(fix.speed, fix.t);
     } catch (e) {
@@ -191,10 +201,11 @@ export function fixAge(t = Date.now()): number {
 }
 
 /** Ride began: start GPS and background keep-alive. Safe to call repeatedly. */
-export function start() {
+export function start(isMock: boolean) {
   if (!wanted) {
     startedAt = Date.now();
     track = [];
+    trackMock = isMock;
     emitTrack();
     keepAlive?.start(KEEP_ALIVE_TASK);
   }

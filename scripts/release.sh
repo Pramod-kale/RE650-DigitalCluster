@@ -21,6 +21,11 @@ fail() { echo "✖ $*" >&2; exit 1; }
 git diff --quiet && git diff --cached --quiet || fail "Uncommitted changes. Commit (and push) first."
 git fetch -q origin
 [ "$(git rev-list --count '@{u}..HEAD' 2>/dev/null || echo 1)" = "0" ] || fail "Local commits not pushed. Run: git push"
+# gh may be signed in to a different account than the SSH key git pushes with.
+PERM=$(gh repo view --json viewerPermission -q .viewerPermission 2>/dev/null || echo NONE)
+case "$PERM" in ADMIN|MAINTAIN|WRITE) ;; *)
+  fail "gh account '$(gh api user -q .login 2>/dev/null)' has $PERM access to this repo; it needs WRITE. Run: gh auth login (or gh auth switch) with the repo owner's account." ;;
+esac
 gh release view "$TAG" >/dev/null 2>&1 && fail "Release $TAG already exists. Bump \"version\" in app.json."
 [ -z "$NOTES_FILE" ] || [ -f "$NOTES_FILE" ] || fail "Notes file not found: $NOTES_FILE"
 
@@ -28,19 +33,28 @@ PRERELEASE=()
 [[ "$VERSION" == *-* ]] && PRERELEASE=(--prerelease)
 COMMIT=$(git rev-parse HEAD)
 
-echo "▶ Building $TAG on EAS (profile: release). This takes a while…"
-mkdir -p builds
-npx eas-cli@latest build --platform android --profile release --non-interactive --wait --json > "builds/eas-$TAG.json"
-URL=$(node -e "
-  const b = JSON.parse(require('fs').readFileSync('builds/eas-$TAG.json', 'utf8'));
-  const build = Array.isArray(b) ? b[0] : b;
-  if (build.status !== 'FINISHED') { console.error('EAS build status: ' + build.status); process.exit(1); }
-  console.log(build.artifacts.buildUrl);
-")
+BUILT_AT=$(node -e "
+  try { const b = require('./builds/eas-$TAG.json'); console.log((Array.isArray(b) ? b[0] : b).gitCommitHash || ''); } catch {}
+" 2>/dev/null)
+if [ -f "$APK" ] && [ "$BUILT_AT" = "$COMMIT" ]; then
+  # A previous run built this commit but didn't publish.
+  echo "▶ Reusing $APK ($(du -h "$APK" | cut -f1))"
+else
+  echo "▶ Building $TAG on EAS (profile: release). This takes a while…"
+  mkdir -p builds
+  npx eas-cli@latest build --platform android --profile release --non-interactive --wait --json > "builds/eas-$TAG.json"
+  URL=$(node -e "
+    const b = JSON.parse(require('fs').readFileSync('builds/eas-$TAG.json', 'utf8'));
+    const build = Array.isArray(b) ? b[0] : b;
+    if (build.status !== 'FINISHED') { console.error('EAS build status: ' + build.status); process.exit(1); }
+    console.log(build.artifacts.buildUrl);
+  ")
 
-echo "▶ Downloading APK"
-curl -fL --progress-bar -o "$APK" "$URL"
-echo "  $APK ($(du -h "$APK" | cut -f1))"
+  echo "▶ Downloading APK"
+  curl -fL --progress-bar -o "$APK.part" "$URL"
+  mv "$APK.part" "$APK"
+  echo "  $APK ($(du -h "$APK" | cut -f1))"
+fi
 
 echo
 echo "Ready to publish ${TAG}${PRERELEASE:+ (pre-release)} on GitHub at commit ${COMMIT:0:7}."

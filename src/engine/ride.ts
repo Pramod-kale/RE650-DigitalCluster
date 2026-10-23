@@ -123,7 +123,7 @@ export function tick(row: string[] | null, mock: boolean, t = Date.now()) {
         rideMock = mock;
         lastInternalFlush = lastExternalFlush = t;
         setStatus({ name: writer.name, pausedAt: null, kept: false, noBike: false, gpsLost: false });
-        gps.start();
+        gps.start(mock);
       } else if (running) {
         resume();
       }
