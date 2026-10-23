@@ -34,28 +34,35 @@ PRERELEASE=()
 [[ "$VERSION" == *-* ]] && PRERELEASE=(--prerelease)
 COMMIT=$(git rev-parse HEAD)
 
-BUILT_AT=$(node -e "
-  try { const b = require('./builds/eas-$TAG.json'); console.log((Array.isArray(b) ? b[0] : b).gitCommitHash || ''); } catch {}
-" 2>/dev/null)
-if [ -f "$APK" ] && [ "$BUILT_AT" = "$COMMIT" ]; then
-  # A previous run built this commit but didn't publish.
-  echo "▶ Reusing $APK ($(du -h "$APK" | cut -f1))"
+# URL of a finished EAS build of this exact commit, if an earlier run made one.
+built_url() {
+  node -e "
+    try {
+      const b = require('./builds/eas-$TAG.json'), x = Array.isArray(b) ? b[0] : b;
+      if (x.status === 'FINISHED' && x.gitCommitHash === '$COMMIT') console.log(x.artifacts.buildUrl);
+    } catch {}
+  " 2>/dev/null
+}
+
+URL=$(built_url)
+if [ -n "$URL" ]; then
+  echo "▶ Reusing the EAS build of ${COMMIT:0:7}"
 else
+  rm -f "$APK" "$APK.part" # never publish an APK from an older commit
   echo "▶ Building $TAG on EAS (profile: release). This takes a while…"
   mkdir -p builds
   npx eas-cli@latest build --platform android --profile release --non-interactive --wait --json > "builds/eas-$TAG.json"
-  URL=$(node -e "
-    const b = JSON.parse(require('fs').readFileSync('builds/eas-$TAG.json', 'utf8'));
-    const build = Array.isArray(b) ? b[0] : b;
-    if (build.status !== 'FINISHED') { console.error('EAS build status: ' + build.status); process.exit(1); }
-    console.log(build.artifacts.buildUrl);
-  ")
-
-  echo "▶ Downloading APK"
-  curl -fL --progress-bar -o "$APK.part" "$URL"
-  mv "$APK.part" "$APK"
-  echo "  $APK ($(du -h "$APK" | cut -f1))"
+  URL=$(built_url)
+  [ -n "$URL" ] || fail "EAS build did not finish. See builds/eas-$TAG.json"
 fi
+
+if [ ! -f "$APK" ]; then
+  echo "▶ Downloading APK"
+  # -C - resumes a partial download; rerun the script if it still fails.
+  curl -fL -C - --retry 5 --retry-all-errors --progress-bar -o "$APK.part" "$URL"
+  mv "$APK.part" "$APK"
+fi
+echo "  $APK ($(du -h "$APK" | cut -f1))"
 
 echo
 echo "Ready to publish ${TAG}${PRERELEASE:+ (pre-release)} on GitHub at commit ${COMMIT:0:7}."
