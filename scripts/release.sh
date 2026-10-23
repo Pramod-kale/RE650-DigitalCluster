@@ -12,6 +12,7 @@ cd "$(dirname "$0")/.."
 
 NOTES_FILE="${1:-}"
 VERSION=$(node -p "require('./app.json').expo.version")
+[[ "$VERSION" == v* ]] && fail "app.json version \"$VERSION\" must not start with \"v\" (the tag adds it): use \"${VERSION#v}\"."
 TAG="v$VERSION"
 APK="builds/RE650-Cluster-$TAG.apk"
 
