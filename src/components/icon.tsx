@@ -28,6 +28,10 @@ const GLYPHS = {
   bluetooth: 0xe1a7,
   share: 0xe80d,
   expand: 0xf1ce, // open_in_full
+  search: 0xe8b6,
+  history: 0xe889,
+  car: 0xe531, // directions_car
+  navigation: 0xe55d,
 } as const;
 
 export type IconName = keyof typeof GLYPHS;
