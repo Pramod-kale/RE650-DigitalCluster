@@ -160,6 +160,12 @@ export default function SettingsScreen() {
             <Button label="Allow background running" onPress={() => keepAlive?.requestIgnoreBatteryOptimizations()} primary />
           </View>
         ) : null}
+        <Text style={formStyles.hint}>
+          Open the app, lock the phone and ride: while a dongle is set up, the app waits for the bike in
+          the background (the &quot;RE650 Cluster is running&quot; notification) and starts recording when
+          the engine starts. It keeps running if you swipe it away from recent apps. Waiting stops by
+          itself after 30 minutes without bike data; open the app again to restart it.
+        </Text>
       </Section>
     ),
     fuel: (

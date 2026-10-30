@@ -9,6 +9,9 @@
  *    is active, which would freeze the OBD poll loop; the local RideKeepAlive
  *    module holds one open (plus a CPU wake lock) for the length of the ride.
  *    It starts even when location can't, so the bike data is still logged.
+ *  - Standby: opening the app with a real dongle starts the same service right
+ *    away, so the phone can be locked before the bike is started. The service
+ *    survives the app being swiped away (killServiceOnDestroy: false).
  * Mock rides get a synthetic loop driven by the mock speed, so the ride map
  * can be tried without riding.
  */
@@ -50,7 +53,12 @@ export const keepAlive = requireOptionalNativeModule<{
 let permission: Promise<boolean> | null = null;
 let running = false;
 let starting = false;
-let wanted = false;
+let wanted = false; // a ride is recording
+// Standby: the app was opened with a real dongle; the service runs so a ride can
+// start with the phone already locked in a pocket (see runtime.ts).
+let standbyOn = false;
+let standbySince = 0;
+let keepAliveOn = false;
 let fix: Fix | null = null;
 let lastKnown: { lat: number; lon: number } | null = null;
 let mock: { lat0: number; lon0: number; th: number; t: number } | null = null;
@@ -200,34 +208,27 @@ export function fixAge(t = Date.now()): number {
   return t - Math.max(fix?.t ?? 0, startedAt);
 }
 
-/** Ride began: start GPS and background keep-alive. Safe to call repeatedly. */
-export function start(isMock: boolean) {
-  if (!wanted) {
-    startedAt = Date.now();
-    track = [];
-    trackMock = isMock;
-    emitTrack();
+function serviceWanted(): boolean {
+  return wanted || standbyOn;
+}
+
+/** Background keep-alive + location service; the service can only start while the app is open. */
+function startService() {
+  if (!keepAliveOn) {
+    keepAliveOn = true;
     keepAlive?.start(KEEP_ALIVE_TASK);
   }
-  wanted = true;
   void ensureRunning();
 }
 
-/** Try again to start location updates that failed to start. No-op otherwise. */
-export function retry() {
-  if (wanted && !running) void ensureRunning();
-}
-
-/** Ride closed. */
-export function stop() {
-  if (wanted) {
+function stopService() {
+  if (keepAliveOn) {
+    keepAliveOn = false;
     keepAlive?.stop();
     releaseKeepAlive?.();
     releaseKeepAlive = null;
   }
-  wanted = false;
   fix = null;
-  mock = null;
   if (!running) return;
   running = false;
   Location.stopLocationUpdatesAsync(LOCATION_TASK).catch((e) =>
@@ -235,12 +236,58 @@ export function stop() {
   );
 }
 
+/**
+ * App opened with a real dongle: run the background service now, so a ride
+ * that starts after the phone is locked is still caught. Safe to call repeatedly.
+ */
+export function standby() {
+  if (!standbyOn) standbySince = Date.now();
+  standbyOn = true;
+  startService();
+}
+
+/** Stop waiting for the bike (no effect on a ride that is recording). */
+export function releaseStandby() {
+  standbyOn = false;
+  if (!wanted) stopService();
+}
+
+/** When standby began, or null when it isn't on. */
+export function standbyStartedAt(): number | null {
+  return standbyOn ? standbySince : null;
+}
+
+/** Ride began: start GPS and background keep-alive. Safe to call repeatedly. */
+export function start(isMock: boolean) {
+  if (!wanted) {
+    startedAt = Date.now();
+    track = [];
+    trackMock = isMock;
+    emitTrack();
+  }
+  wanted = true;
+  startService();
+}
+
+/** Try again to start location updates that failed to start. No-op otherwise. */
+export function retry() {
+  if (serviceWanted() && !running) void ensureRunning();
+}
+
+/** Ride closed. The service keeps running while standby is on. */
+export function stop() {
+  wanted = false;
+  mock = null;
+  if (standbyOn) standbySince = Date.now(); // wait for the next ride from now
+  else stopService();
+}
+
 async function ensureRunning() {
   if (running || starting) return;
   starting = true;
   try {
     await stopStale(); // never races a ride that starts right after launch
-    if (!(await requestPermission()) || !wanted) return;
+    if (!(await requestPermission()) || !serviceWanted()) return;
     // Android refuses to start the foreground service from the background; the
     // ride then records only while the app is open.
     await Location.startLocationUpdatesAsync(LOCATION_TASK, {
@@ -251,14 +298,16 @@ async function ensureRunning() {
       pausesUpdatesAutomatically: false,
       showsBackgroundLocationIndicator: true,
       foregroundService: {
-        notificationTitle: 'Recording ride',
-        notificationBody: 'Logging bike data and route in the background.',
-        notificationColor: '#58a6ff',
-        killServiceOnDestroy: true,
+        notificationTitle: 'RE650 Cluster is running',
+        notificationBody: 'Records automatically when the bike starts. Open the app to end a ride.',
+        notificationColor: '#93c5fd',
+        // Keep running when the app is swiped out of recents: the service keeps
+        // the process (and the ride) alive. Standby and rides end by themselves.
+        killServiceOnDestroy: false,
       },
     });
     running = true;
-    if (!wanted) stop(); // ride closed while we were starting
+    if (!serviceWanted()) stopService(); // ride / standby ended while we were starting
   } catch (e) {
     console.warn('[gps] background updates failed to start', e);
   } finally {

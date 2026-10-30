@@ -28,6 +28,9 @@ import * as store from './store';
 
 // How often odometer/tank go to disk (same as PERSIST_INTERVAL on the Pi).
 const PERSIST_INTERVAL_MS = 30_000;
+// Standby (service running, waiting for the bike) ends after this long in the
+// background without bike data, so a forgotten app doesn't drain the battery.
+const STANDBY_MS = 30 * 60_000;
 
 export type RuntimeInfo = {
   ready: boolean;
@@ -73,6 +76,25 @@ function maybePersist() {
   if (Date.now() - lastPersist >= PERSIST_INTERVAL_MS) persistNow();
 }
 
+/**
+ * Wait for the bike in the background whenever a real dongle is set up: the
+ * phone can then be locked before the ride (see gps.standby).
+ */
+function syncStandby() {
+  const s = info.settings;
+  const dongle = s.transport === 'wifi' || s.btDevice != null;
+  if (!s.mock && dongle) gps.standby();
+  else gps.releaseStandby();
+}
+
+/** Release standby after STANDBY_MS in the background with no ride and no bike data. */
+function standbyCheck(t = Date.now()) {
+  const since = gps.standbyStartedAt();
+  if (since == null || ride.currentRide() || AppState.currentState === 'active') return;
+  const lastBike = store.getLive().lastUpdate ?? 0;
+  if (t - Math.max(since, lastBike) > STANDBY_MS) gps.releaseStandby();
+}
+
 let started = false;
 // Returning to the app syncs at most this often.
 const FOREGROUND_SYNC_MS = 5 * 60_000;
@@ -108,7 +130,8 @@ export function init() {
   void gps
     .stopStale()
     .then(() => gps.requestPermission())
-    .then(() => (info.settings.transport === 'bluetooth' ? requestBtPermission() : true));
+    .then(() => (info.settings.transport === 'bluetooth' ? requestBtPermission() : true))
+    .then(syncStandby);
   void setupNotifications({ end: ride.closeRide, keep: ride.keepRide });
   poller.start(settings, { onCycle: maybePersist });
 
@@ -131,6 +154,7 @@ export function init() {
   // Idle-close rides and persist even while the poller is stuck reconnecting.
   setInterval(() => {
     ride.idleCheck();
+    standbyCheck();
     maybePersist();
   }, 5_000);
 
@@ -139,7 +163,10 @@ export function init() {
     if (s !== 'active') {
       ride.flushRide();
       persistNow();
-    } else if (Date.now() - lastForegroundSync > FOREGROUND_SYNC_MS) {
+      return;
+    }
+    syncStandby(); // the service can only (re)start while the app is open
+    if (Date.now() - lastForegroundSync > FOREGROUND_SYNC_MS) {
       lastForegroundSync = Date.now();
       void requestSync(); // pick up what other phones did meanwhile
     }
@@ -256,6 +283,7 @@ export function updateSettings(patch: Partial<Settings>) {
   if (restart) {
     if (next.mock !== prev.mock) ride.closeRide(); // don't mix mock and real rows in one CSV
     poller.start(next, { onCycle: maybePersist });
+    syncStandby();
   }
 }
 
