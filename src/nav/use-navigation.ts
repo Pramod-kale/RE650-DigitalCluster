@@ -2,11 +2,11 @@
  * Navigation state for the full-screen map: pick a place → preview the routes
  * (alternatives, bike or car roads) → ride it. While riding, the route is
  * re-planned after a while off it, and the arrival time follows the rider's
- * own pace. Driven by the live ride track, so it only runs while a ride records.
+ * own pace. Works before a ride starts too (see position.ts), and carries on
+ * into it.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { getTrack, subscribeTrack } from '@/engine/gps';
 import { rememberPlace } from '@/storage/places';
 
 import {
@@ -20,7 +20,8 @@ import {
   type Pace,
   type Place,
 } from './navigate';
-import { ARRIVED_M, bearingDeg, locate, type LatLon, type Progress } from './trackback';
+import { getPosition, subscribePosition } from './position';
+import { ARRIVED_M, locate, type Progress } from './trackback';
 
 type Active = { phase: 'active'; dest: Place; mode: Mode; route: NavRoute; rerouting: boolean; arrived: boolean };
 export type NavState =
@@ -30,15 +31,6 @@ export type NavState =
 
 const ALTERNATES = 2;
 const IDLE: NavState = { phase: 'idle' };
-
-/** Latest track point, and the direction of travel from the one before. */
-function position(): { here: LatLon; heading: number | null } | null {
-  const t = getTrack();
-  if (!t.length) return null;
-  const ll = (i: number): LatLon => ({ lat: t[i][1], lon: t[i][0] });
-  const here = ll(t.length - 1);
-  return { here, heading: t.length > 1 ? bearingDeg(ll(t.length - 2), here) : null };
-}
 
 function errorText(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
@@ -63,19 +55,19 @@ export function useNavigation() {
 
   const request = useCallback((dest: Place, mode: Mode, alternates: number) => {
     inflight.current?.abort();
-    const pos = position();
+    const pos = getPosition();
     if (!pos) return Promise.reject(new Error('Waiting for GPS'));
     const ctl = new AbortController();
     inflight.current = ctl;
-    return fetchRoutes(pos.here, dest, mode, { alternates, heading: pos.heading, signal: ctl.signal });
+    return fetchRoutes(pos, dest, mode, { alternates, heading: pos.heading, signal: ctl.signal });
   }, []);
 
   // A new position (or a new route): progress, pace, arrival, reroute.
   const step = useCallback(() => {
     const s = stateRef.current;
-    const pos = position();
+    const pos = getPosition();
     if (s.phase !== 'active' || !pos) return;
-    const progress = locate(s.route.route, pos.here);
+    const progress = locate(s.route.route, pos);
     if (!progress) return;
     const now = Date.now();
 
@@ -116,8 +108,8 @@ export function useNavigation() {
         offSince.current = null;
         checkpoint.current = null;
         setState({ ...stateRef.current, route, rerouting: false });
-        const p = position();
-        const prog = p && locate(route.route, p.here);
+        const p = getPosition();
+        const prog = p && locate(route.route, p);
         if (prog) setView({ progress: prog, leftS: etaSeconds(route, prog.along, pace.current) });
       },
       (e) => {
@@ -127,7 +119,7 @@ export function useNavigation() {
     );
   }, [request, setState]);
 
-  useEffect(() => subscribeTrack(step), [step]);
+  useEffect(() => subscribePosition(step), [step]);
   useEffect(() => () => inflight.current?.abort(), []);
 
   const preview = useCallback(

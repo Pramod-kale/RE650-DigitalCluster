@@ -118,6 +118,11 @@ export function getTrackVersion(): number {
   return trackVersion;
 }
 
+/** A ride is recording (the track is live, not left over from the last ride). */
+export function isRecording(): boolean {
+  return wanted;
+}
+
 /** The open ride's route so far, oldest first. Do not mutate. */
 export function getTrack(): readonly LonLat[] {
   return track;

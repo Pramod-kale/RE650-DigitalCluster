@@ -1,13 +1,13 @@
 /**
- * Live route of the open ride: grey line, cyan start ring, light-blue "you"
- * dot with a glow. The camera follows the latest point. The expand button
- * opens it full screen (speed and gear stay visible there), where a place can
- * be searched and navigated to.
+ * Where you are, plus the live route of the open ride: grey line, cyan start
+ * ring, light-blue "you" dot with a glow. The camera follows you. The expand
+ * button opens it full screen (speed and gear stay visible there), where a
+ * place can be searched and navigated to, with or without a ride.
  */
 import { Camera, GeoJSONSource, Layer, Map } from '@maplibre/maplibre-react-native';
 import type { FeatureCollection, Position } from 'geojson';
 import { router } from 'expo-router';
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useMemo, useState, useSyncExternalStore } from 'react';
 import { Modal, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -16,12 +16,13 @@ import { Hatch, PillButton, R } from '@/components/ui';
 import { getTrack, getTrackVersion, subscribeTrack, type LonLat } from '@/engine/gps';
 import { useObd } from '@/engine/hooks';
 import { boundsOf } from '@/nav/navigate';
+import { getPosition, subscribePosition } from '@/nav/position';
 import { splitLines } from '@/nav/trackback';
 import { useNavigation } from '@/nav/use-navigation';
 import { C, fmt, speedColor } from '@/theme/dash';
 import { useMapStyle } from '@/theme/mapStyle';
 
-type Route = { line: FeatureCollection; start: LonLat; here: LonLat };
+type Route = { line: FeatureCollection; start: LonLat | null; here: LonLat };
 type Nav = ReturnType<typeof useNavigation>;
 // What the map draws for navigation: the chosen route, the other choices, and
 // either a box to fit (route preview) or nothing (follow the rider).
@@ -50,11 +51,13 @@ function point(c: LonLat): FeatureCollection {
   };
 }
 
-function useRoute(): Route | null {
+/** Your position, and the open ride's track when one records. */
+function useRoute(recording: boolean): Route | null {
   const version = useSyncExternalStore(subscribeTrack, getTrackVersion);
+  const pos = useSyncExternalStore(subscribePosition, getPosition);
   return useMemo(() => {
-    const t = getTrack();
-    if (!t.length) return null;
+    if (!pos) return null;
+    const t = recording ? getTrack() : [];
     return {
       line: {
         type: 'FeatureCollection',
@@ -63,12 +66,12 @@ function useRoute(): Route | null {
             ? [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: t.map((p) => [...p]) } }]
             : [],
       },
-      start: t[0],
-      here: t[t.length - 1],
+      start: t[0] ?? null,
+      here: [pos.lon, pos.lat],
     };
     // `version` changes whenever the track gets new points.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [version]);
+  }, [version, pos, recording]);
 }
 
 function LiveMap({
@@ -119,7 +122,7 @@ function LiveMap({
           paint={{ 'circle-radius': 7, 'circle-color': C.warn, 'circle-stroke-width': 3, 'circle-stroke-color': C.bg }}
         />
       </GeoJSONSource>
-      <GeoJSONSource id="mm-start" data={point(route.start)}>
+      <GeoJSONSource id="mm-start" data={route.start ? point(route.start) : NO_FEATURES}>
         <Layer
           id="mm-start"
           type="circle"
@@ -231,16 +234,12 @@ export function MiniMap({
   avgKmh: number | null;
   noBike: boolean;
 }) {
-  const route = useRoute();
+  const route = useRoute(recording);
   const [expanded, setExpanded] = useState(false);
-  const live = recording && route != null;
+  const live = route != null;
   // Navigation lives here, not in the full-screen view, so closing and
-  // reopening the map keeps it; it ends with the ride.
+  // reopening the map keeps it, as does a ride starting or ending.
   const nav = useNavigation();
-  const { end: endNav, state: navState } = nav;
-  useEffect(() => {
-    if (!live && navState.phase !== 'idle') endNav();
-  }, [live, navState.phase, endNav]);
 
   return (
     <View style={styles.box}>
@@ -250,7 +249,7 @@ export function MiniMap({
         <View style={styles.empty}>
           <Hatch color={C.border} gap={10} />
           <Text style={styles.emptyTxt}>
-            {expanded ? '' : recording ? 'Waiting for GPS…' : 'The route shows here once a ride starts'}
+            {expanded ? '' : 'Waiting for your location…'}
           </Text>
         </View>
       )}
