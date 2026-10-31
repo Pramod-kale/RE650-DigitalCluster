@@ -10,7 +10,7 @@ import { Icon, type IconName } from '@/components/icon';
 import { HatchBar, PillButton, R } from '@/components/ui';
 import { keepAlive } from '@/engine/gps';
 import { useNow, useObd, useRide, useRuntime } from '@/engine/hooks';
-import { closeRide, keepRide, PAUSE_AUTO_END_MS } from '@/engine/ride';
+import { endRide, keepRide, PAUSE_AUTO_END_MS } from '@/engine/ride';
 import { chooseFolder } from '@/engine/runtime';
 import { BT_NO_PERMISSION, BT_OFF, requestBtPermission } from '@/obd/bluetooth';
 import { router } from 'expo-router';
@@ -133,7 +133,7 @@ export function RidePausedModal() {
           </Text>
           <HatchBar pct={leftPct} zone={C.info} style={{ height: 10 }} />
           <View style={styles.actions}>
-            <PillButton label="End ride" onPress={closeRide} style={styles.action} />
+            <PillButton label="End ride" onPress={endRide} style={styles.action} />
             <PillButton label="Keep recording" strong onPress={keepRide} style={styles.action} />
           </View>
         </View>

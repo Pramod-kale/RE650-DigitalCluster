@@ -7,8 +7,8 @@
 import { Camera, GeoJSONSource, Layer, Map } from '@maplibre/maplibre-react-native';
 import type { FeatureCollection, Position } from 'geojson';
 import { router } from 'expo-router';
-import { useMemo, useState, useSyncExternalStore } from 'react';
-import { Modal, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { BackHandler, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { NavBar, PlaceSearch, RoutePicker } from '@/components/dash/map-nav';
@@ -18,7 +18,7 @@ import { useObd } from '@/engine/hooks';
 import { boundsOf } from '@/nav/navigate';
 import { getPosition, subscribePosition } from '@/nav/position';
 import { splitLines } from '@/nav/trackback';
-import { useNavigation } from '@/nav/use-navigation';
+import type { useNavigation } from '@/nav/use-navigation';
 import { C, fmt, speedColor } from '@/theme/dash';
 import { useMapStyle } from '@/theme/mapStyle';
 
@@ -160,8 +160,26 @@ function navLayer(s: Nav['state'], progress: Nav['progress'], here: LonLat): Nav
   };
 }
 
-/** Full-screen route, with the speed and gear kept in view, and place search. */
-function ExpandedMap({ route, nav, onClose }: { route: Route; nav: Nav; onClose: () => void }) {
+/**
+ * Full-screen route, with the speed and gear kept in view, and place search.
+ * Drawn over the dashboard rather than in a Modal: on Android a Modal is a
+ * window of its own that covers the activity's, and the keep-screen-on flag
+ * of a covered window is ignored, so the phone locked mid-ride.
+ */
+export function FullMap({ recording, nav, onClose }: { recording: boolean; nav: Nav; onClose: () => void }) {
+  const route = useRoute(recording);
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [onClose]);
+  if (!route) return null;
+  return <FullMapView route={route} nav={nav} onClose={onClose} />;
+}
+
+function FullMapView({ route, nav, onClose }: { route: Route; nav: Nav; onClose: () => void }) {
   const { data } = useObd();
   const { width, height } = useWindowDimensions();
   const wide = width > height;
@@ -175,49 +193,47 @@ function ExpandedMap({ route, nav, onClose }: { route: Route; nav: Nav; onClose:
     />
   );
   return (
-    <Modal visible animationType="fade" onRequestClose={onClose} supportedOrientations={['portrait', 'landscape']}>
-      <View style={styles.full}>
-        <LiveMap route={route} zoom={16} nav={layer} fitPadding={wide ? FIT_WIDE : FIT_TALL} />
-        <SafeAreaView style={styles.fullOverlay} pointerEvents="box-none" edges={['top', 'bottom', 'left', 'right']}>
-          <View pointerEvents="box-none">
-            <View style={styles.fullTop} pointerEvents="box-none">
-              <PillButton icon="close" onPress={onClose} style={styles.solidBg} />
-              {wide ? search : null}
-              <View style={styles.speedBox}>
-                <Text style={[styles.speedNum, { color: speedColor(data.speed) }]}>{fmt(data.speed, 0, '0')}</Text>
-                <Text style={styles.speedUnit}>km/h · gear {data.gear ?? '–'}</Text>
-              </View>
+    <View style={styles.full}>
+      <LiveMap route={route} zoom={16} nav={layer} fitPadding={wide ? FIT_WIDE : FIT_TALL} />
+      <SafeAreaView style={styles.fullOverlay} pointerEvents="box-none" edges={['top', 'bottom', 'left', 'right']}>
+        <View pointerEvents="box-none">
+          <View style={styles.fullTop} pointerEvents="box-none">
+            <PillButton icon="close" onPress={onClose} style={styles.solidBg} />
+            {wide ? search : null}
+            <View style={styles.speedBox}>
+              <Text style={[styles.speedNum, { color: speedColor(data.speed) }]}>{fmt(data.speed, 0, '0')}</Text>
+              <Text style={styles.speedUnit}>km/h · gear {data.gear ?? '–'}</Text>
             </View>
-            {wide ? null : search}
           </View>
-          <View style={[styles.fullBottom, wide && styles.fullBottomWide]} pointerEvents="box-none">
-            {s.phase === 'preview' ? (
-              <RoutePicker
-                state={s}
-                onMode={nav.setMode}
-                onPick={nav.pick}
-                onStart={nav.start}
-                onCancel={nav.end}
-                style={styles.sheet}
-              />
-            ) : s.phase === 'active' ? (
-              <NavBar state={s} progress={nav.progress} leftS={nav.leftS} onEnd={nav.end} style={styles.sheet} />
-            ) : (
-              <PillButton
-                icon="backToStart"
-                label="Back to start"
-                strong
-                onPress={() => {
-                  onClose();
-                  backToStart();
-                }}
-                style={styles.solidBg}
-              />
-            )}
-          </View>
-        </SafeAreaView>
-      </View>
-    </Modal>
+          {wide ? null : search}
+        </View>
+        <View style={[styles.fullBottom, wide && styles.fullBottomWide]} pointerEvents="box-none">
+          {s.phase === 'preview' ? (
+            <RoutePicker
+              state={s}
+              onMode={nav.setMode}
+              onPick={nav.pick}
+              onStart={nav.start}
+              onCancel={nav.end}
+              style={styles.sheet}
+            />
+          ) : s.phase === 'active' ? (
+            <NavBar state={s} progress={nav.progress} leftS={nav.leftS} onEnd={nav.end} style={styles.sheet} />
+          ) : (
+            <PillButton
+              icon="backToStart"
+              label="Back to start"
+              strong
+              onPress={() => {
+                onClose();
+                backToStart();
+              }}
+              style={styles.solidBg}
+            />
+          )}
+        </View>
+      </SafeAreaView>
+    </View>
   );
 }
 
@@ -229,17 +245,17 @@ export function MiniMap({
   recording,
   avgKmh,
   noBike,
+  expanded,
+  onExpand,
 }: {
   recording: boolean;
   avgKmh: number | null;
   noBike: boolean;
+  expanded: boolean; // the full-screen map is open (one map at a time)
+  onExpand: () => void;
 }) {
   const route = useRoute(recording);
-  const [expanded, setExpanded] = useState(false);
   const live = route != null;
-  // Navigation lives here, not in the full-screen view, so closing and
-  // reopening the map keeps it, as does a ride starting or ending.
-  const nav = useNavigation();
 
   return (
     <View style={styles.box}>
@@ -268,10 +284,8 @@ export function MiniMap({
         </View>
       ) : null}
 
-      {live ? <PillButton icon="expand" onPress={() => setExpanded(true)} style={[styles.expand, styles.solidBg]} /> : null}
+      {live ? <PillButton icon="expand" onPress={onExpand} style={[styles.expand, styles.solidBg]} /> : null}
       <PillButton icon="backToStart" label="Back to start" strong onPress={backToStart} style={[styles.back, styles.solidBg]} />
-
-      {expanded && route ? <ExpandedMap route={route} nav={nav} onClose={() => setExpanded(false)} /> : null}
     </View>
   );
 }
@@ -317,7 +331,7 @@ const styles = StyleSheet.create({
   solidBg: { backgroundColor: C.bg },
   expand: { position: 'absolute', right: 10, top: 10 },
   back: { position: 'absolute', right: 12, bottom: 12 },
-  full: { flex: 1, backgroundColor: C.bg },
+  full: { ...StyleSheet.absoluteFill, zIndex: 20, backgroundColor: C.bg },
   fullOverlay: { ...StyleSheet.absoluteFill, padding: 16, justifyContent: 'space-between' },
   fullTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   fullBottom: { flexDirection: 'row', justifyContent: 'flex-end' },

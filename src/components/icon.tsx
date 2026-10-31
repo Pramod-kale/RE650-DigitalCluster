@@ -32,6 +32,7 @@ const GLYPHS = {
   history: 0xe889,
   car: 0xe531, // directions_car
   navigation: 0xe55d,
+  stop: 0xe047,
 } as const;
 
 export type IconName = keyof typeof GLYPHS;

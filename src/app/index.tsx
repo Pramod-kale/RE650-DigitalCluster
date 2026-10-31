@@ -5,16 +5,19 @@
  */
 import { useKeepAwake } from 'expo-keep-awake';
 import { router } from 'expo-router';
-import { StyleSheet, useWindowDimensions, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { Alert, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RidePausedModal, TopBanner } from '@/components/dash/alerts';
-import { MiniMap } from '@/components/dash/mini-map';
+import { FullMap, MiniMap } from '@/components/dash/mini-map';
 import { FuelStrip, PctTile, StatTile } from '@/components/dash/readings';
 import { SpeedCard } from '@/components/dash/speed-card';
 import { Chip, PillButton } from '@/components/ui';
 import { useNow, useObd, useRide } from '@/engine/hooks';
+import { endRide } from '@/engine/ride';
 import { fmtKmL } from '@/engine/units';
+import { useNavigation } from '@/nav/use-navigation';
 import { TANK_L } from '@/obd/constants';
 import { parseRideName } from '@/storage/rideSummary';
 import { C, eotTone, fmt, toneColor, voltTone, type Tone } from '@/theme/dash';
@@ -23,6 +26,13 @@ import { C, eotTone, fmt, toneColor, voltTone, type Tone } from '@/theme/dash';
 function alarm(t: Tone, connected: boolean): string | undefined {
   if (!connected) return undefined;
   return t === 'warn' || t === 'danger' || t === 'cool' ? toneColor[t] : undefined;
+}
+
+function confirmEnd() {
+  Alert.alert('End this ride?', 'The ride is saved. The next one starts after the engine has been switched off and on again.', [
+    { text: 'Cancel', style: 'cancel' },
+    { text: 'End ride', style: 'destructive', onPress: endRide },
+  ]);
 }
 
 function clock(ms: number): string {
@@ -37,6 +47,11 @@ export default function Dashboard() {
   const now = useNow();
   const { width, height } = useWindowDimensions();
   const portrait = height > width;
+  // Navigation lives here, not in the full-screen map, so closing and reopening
+  // the map keeps it, as does a ride starting or ending.
+  const nav = useNavigation();
+  const [mapOpen, setMapOpen] = useState(false);
+  const closeMap = useCallback(() => setMapOpen(false), []);
 
   const recording = ride.name != null;
   const startedAt = ride.name ? parseRideName(ride.name)?.startedAt : null;
@@ -65,6 +80,7 @@ export default function Dashboard() {
   const refuel = <PillButton icon="fuel" label="Refuel" strong onPress={() => router.push('/fuel')} />;
   const rides = <PillButton icon="map" label="Rides" onPress={() => router.push('/rides')} />;
   const settings = <PillButton icon="settings" onPress={() => router.push('/settings')} />;
+  const end = recording ? <PillButton icon="stop" label="End" color={C.danger} onPress={confirmEnd} /> : null;
 
   // ---- fuel / range
   const leftL = Math.max(0, TANK_L - tank.sinceFillL);
@@ -80,7 +96,15 @@ export default function Dashboard() {
   );
 
   const avgKmh = session.elapsedMin > 1 ? session.kmTotal / (session.elapsedMin / 60) : null;
-  const map = <MiniMap recording={recording} avgKmh={avgKmh} noBike={ride.noBike} />;
+  const map = (
+    <MiniMap
+      recording={recording}
+      avgKmh={avgKmh}
+      noBike={ride.noBike}
+      expanded={mapOpen}
+      onExpand={() => setMapOpen(true)}
+    />
+  );
 
   const tiles = (size: 'sm' | 'md') => [
     <StatTile key="oil" size={size} label="Oil" value={fmt(data.eot, 0)} unit="°C" color={alarm(eotTone(data.eot), data.connected)} />,
@@ -104,7 +128,10 @@ export default function Dashboard() {
             {rec}
             {bike}
             {gps}
-            <View style={styles.push}>{settings}</View>
+            <View style={[styles.push, styles.buttons]}>
+              {end}
+              {settings}
+            </View>
           </View>
           <View style={styles.bar}>
             {trip}
@@ -138,6 +165,7 @@ export default function Dashboard() {
             {gps}
             {trip}
             <View style={[styles.push, styles.buttons]}>
+              {end}
               {refuel}
               {rides}
               {settings}
@@ -164,6 +192,7 @@ export default function Dashboard() {
         </>
       )}
       <TopBanner />
+      {mapOpen ? <FullMap recording={recording} nav={nav} onClose={closeMap} /> : null}
       <RidePausedModal />
     </SafeAreaView>
   );

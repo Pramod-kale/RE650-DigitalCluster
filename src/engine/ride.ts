@@ -4,7 +4,8 @@
  * engine off (or no data at all) it is paused and the rider is asked whether
  * to end it. The engine running again resumes it in the same CSV, so a tea stop
  * doesn't split the trip. It ends on "End", or after PAUSE_AUTO_END_MS unless
- * the rider chose "Keep".
+ * the rider chose "Keep". Ended by hand, the next ride waits for the engine to
+ * have stopped, so ending with the engine running doesn't start a new one.
  *
  * "Running" rather than "fresh data" because with the ignition on and the
  * engine off the ECU keeps answering (rpm 0), so data alone never goes stale.
@@ -53,6 +54,7 @@ let lastExternalFlush = 0;
 let rideMock = false;
 let lastRowT = 0; // last OBD row (engine running or not)
 let lastMovingT = 0; // last GPS fix at riding speed while bike data was missing
+let endedByHand = false; // no new ride until the engine has been seen stopped
 
 let status: RideStatus = { name: null, pausedAt: null, kept: false, noBike: false, gpsLost: false };
 const listeners = new Set<() => void>();
@@ -110,6 +112,7 @@ function maybeFlush(t: number) {
 export function tick(row: string[] | null, mock: boolean, t = Date.now()) {
   try {
     const running = row != null && Number(row[RPM_COL]) > 0;
+    if (!running) endedByHand = false;
     if (row) {
       lastRowT = t;
       if (status.noBike) {
@@ -117,7 +120,7 @@ export function tick(row: string[] | null, mock: boolean, t = Date.now()) {
         void clearNoBikeData();
       }
     }
-    if (row && (writer || running)) {
+    if (row && (writer || (running && !endedByHand))) {
       if (!writer) {
         writer = new RideWriter(rideFileName(new Date(t), mock));
         rideMock = mock;
@@ -223,7 +226,14 @@ export function flushRide() {
   }
 }
 
+/** The rider ended the ride (dashboard, paused dialog, notification). */
+export function endRide() {
+  closeRide();
+  endedByHand = true;
+}
+
 export function closeRide() {
+  endedByHand = false;
   const w = writer;
   writer = null;
   lastMovingT = 0;

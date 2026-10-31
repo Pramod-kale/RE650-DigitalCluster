@@ -1,5 +1,5 @@
 import { fixAge } from '@/engine/gps';
-import { closeRide, getRideStatus, gpsTick, idleCheck, keepRide, tick } from '@/engine/ride';
+import { closeRide, endRide, getRideStatus, gpsTick, idleCheck, keepRide, tick } from '@/engine/ride';
 import {
   clearGpsLost,
   clearNoBikeData,
@@ -195,5 +195,36 @@ describe('GPS lost', () => {
     idleCheck(T0 + 13 * MIN);
     expect(showGpsLost).not.toHaveBeenCalled();
     jest.mocked(fixAge).mockReturnValue(0);
+  });
+});
+
+describe('ending by hand', () => {
+  it('does not start a new ride while the engine is still running', () => {
+    tick(ROW, false, T0);
+    const first = getRideStatus().name;
+    expect(first).not.toBeNull();
+    endRide();
+    expect(getRideStatus().name).toBeNull();
+    expect(recordSummary).toHaveBeenCalledTimes(1);
+    tick(ROW, false, T0 + 1000);
+    tick(ROW, false, T0 + 2000);
+    expect(getRideStatus().name).toBeNull();
+  });
+
+  it('starts the next ride once the engine has stopped and started again', () => {
+    tick(ROW, false, T0);
+    endRide();
+    tick(OFF, false, T0 + 1000);
+    expect(getRideStatus().name).toBeNull();
+    tick(ROW, false, T0 + 5 * MIN);
+    expect(getRideStatus().name).not.toBeNull();
+  });
+
+  it('a lost connection also counts as the engine stopping', () => {
+    tick(ROW, false, T0);
+    endRide();
+    tick(null, false, T0 + 1000);
+    tick(ROW, false, T0 + 2000);
+    expect(getRideStatus().name).not.toBeNull();
   });
 });

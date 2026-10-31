@@ -132,7 +132,7 @@ export function init() {
     .then(() => gps.requestPermission())
     .then(() => (info.settings.transport === 'bluetooth' ? requestBtPermission() : true))
     .then(syncStandby);
-  void setupNotifications({ end: ride.closeRide, keep: ride.keepRide });
+  void setupNotifications({ end: ride.endRide, keep: ride.keepRide });
   poller.start(settings, { onCycle: maybePersist });
 
   void initCloud({
